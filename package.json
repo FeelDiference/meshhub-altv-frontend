@@ -1,0 +1,36 @@
+{
+  "name": "meshhub-altv-integration",
+  "version": "1.0.0",
+  "description": "WebView инструмент для ALT:V с интеграцией в MeshHub Backend для управления автомобилями",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "build-webview": "./scripts/build-webview.sh",
+    "build-resource": "./scripts/build-resource.sh"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.453.0",
+    "axios": "^1.6.0",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/crypto-js": "^4.2.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "@tailwindcss/forms": "^0.5.7",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.5"
+  },
+  "keywords": ["altv", "meshhub", "webview", "vehicle", "handling"],
+  "author": "MeshHub Team",
+  "license": "MIT"
+}
