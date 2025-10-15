@@ -196,8 +196,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         className="mt-4 text-center"
       >
         <div className="inline-flex items-center space-x-2 text-xs text-gray-500">
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          <span>Подключено к hub.feeld.space</span>
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+          <span>Demo режим (Mock авторизация)</span>
         </div>
       </motion.div>
     </div>

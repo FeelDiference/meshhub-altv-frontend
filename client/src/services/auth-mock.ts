@@ -51,13 +51,27 @@ export async function mockLogin(credentials: LoginRequest): Promise<LoginRespons
  * Проверить доступность настоящего backend
  */
 export async function checkBackendAvailability(): Promise<boolean> {
+  // В dev режиме в браузере всегда используем mock из-за CORS
+  // В реальном ALT:V WebView CORS не будет проблемой
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    console.log('🌐 Запуск в браузере (localhost) - используем mock из-за CORS ограничений')
+    return false
+  }
+
   try {
-    const response = await fetch('https://hub.feeld.space/health', {
+    // В production или ALT:V пытаемся подключиться к реальному backend
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    const response = await fetch('https://hub.feeld.space/api/health', {
       method: 'GET',
-      timeout: 5000,
-    } as any)
+      signal: controller.signal,
+    })
+    
+    clearTimeout(timeoutId)
     return response.ok
-  } catch {
+  } catch (error) {
+    console.log('🔧 Backend недоступен или CORS блокировка, используем mock')
     return false
   }
 }
