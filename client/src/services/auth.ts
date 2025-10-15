@@ -54,12 +54,45 @@ apiClient.interceptors.response.use(
  * Авторизация пользователя
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
-  // Проверяем доступность backend в dev режиме
-  if (import.meta.env.DEV) {
-    const isBackendAvailable = await checkBackendAvailability()
+  // Сначала пытаемся реальную авторизацию через backend (с proxy в dev)
+  try {
+    console.log('🔄 Попытка авторизации через MeshHub Backend...')
     
-    if (!isBackendAvailable) {
-      console.log('🔧 Backend недоступен, используем mock авторизацию для демонстрации')
+    const response: AxiosResponse<LoginResponse> = await apiClient.post(
+      API_CONFIG.endpoints.login,
+      credentials
+    )
+
+    console.log('✅ Успешная авторизация через backend')
+    
+    const { token, user } = response.data
+
+    // Создаем данные сессии
+    const sessionData: SessionData = {
+      userId: user.id,
+      token,
+      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа по умолчанию
+    }
+
+    // Сохраняем зашифрованную сессию
+    saveSession(sessionData)
+    saveUser(user)
+
+    // Уведомляем о успешном подключении к backend
+    window.dispatchEvent(new CustomEvent('auth:backend-success'))
+
+    return response.data
+    
+  } catch (error: any) {
+    console.log('❌ Ошибка авторизации через backend:', error.message)
+    
+    // Если backend недоступен, используем mock в dev режиме
+    if (import.meta.env.DEV && (
+      error.code === 'ERR_NETWORK' || 
+      error.code === 'ECONNABORTED' ||
+      error.response?.status >= 500
+    )) {
+      console.log('🎭 Backend недоступен, переключаемся на mock авторизацию')
       
       try {
         const mockResponse = await mockLogin(credentials)
@@ -75,38 +108,16 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
         saveSession(sessionData)
         saveUser(mockResponse.user)
 
+        // Уведомляем о переключении на mock
+        window.dispatchEvent(new CustomEvent('auth:mock-fallback'))
+
         return mockResponse
-      } catch (error: any) {
-        throw new Error(error.message)
+      } catch (mockError: any) {
+        throw new Error(mockError.message)
       }
     }
-  }
-
-  // Реальная авторизация через backend
-  try {
-    const response: AxiosResponse<LoginResponse> = await apiClient.post(
-      API_CONFIG.endpoints.login,
-      credentials
-    )
-
-    const { token, user } = response.data
-
-    // Создаем данные сессии
-    const sessionData: SessionData = {
-      userId: user.id,
-      token,
-      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа по умолчанию
-    }
-
-    // Сохраняем зашифрованную сессию
-    saveSession(sessionData)
-    saveUser(user)
-
-    return response.data
-  } catch (error: any) {
-    console.error('Login failed:', error)
     
-    // Обработка различных типов ошибок
+    // Обработка других ошибок
     if (error.response?.status === 401) {
       throw new Error('Неверный логин или пароль')
     } else if (error.response?.status === 429) {

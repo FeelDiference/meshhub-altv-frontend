@@ -2,7 +2,9 @@
 
 export const API_CONFIG = {
   // Base URL для MeshHub Backend
-  baseUrl: 'https://hub.feeld.space',
+  // В dev режиме используем proxy (/api -> https://hub.feeld.space)
+  // В production будет настроен относительный путь или полный URL
+  baseUrl: import.meta.env.DEV ? '' : 'https://hub.feeld.space',
   
   // Endpoints
   endpoints: {

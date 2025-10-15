@@ -2,10 +2,11 @@
 
 import React, { useState, FormEvent, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react'
+import { LogIn, Mail, Lock, AlertCircle, Wifi, WifiOff, Loader2 } from 'lucide-react'
 import { Input } from '@/components/common/Input'
 import { Button } from '@/components/common/Button'
 import { useAuth } from '@/hooks/useAuth'
+import { useBackendStatus } from '@/hooks/useBackendStatus'
 import type { LoginRequest } from '@/types/auth'
 
 interface LoginFormProps {
@@ -14,6 +15,7 @@ interface LoginFormProps {
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const { login, isLoading, error, clearError } = useAuth()
+  const { status, isConnected, isMock, isChecking } = useBackendStatus()
   
   const [formData, setFormData] = useState<LoginRequest>({
     username: '',
@@ -196,8 +198,30 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         className="mt-4 text-center"
       >
         <div className="inline-flex items-center space-x-2 text-xs text-gray-500">
-          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-          <span>Demo режим (Mock авторизация)</span>
+          {isChecking && (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+              <span>Проверка подключения...</span>
+            </>
+          )}
+          {isConnected && (
+            <>
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span>Подключено к hub.feeld.space</span>
+            </>
+          )}
+          {isMock && (
+            <>
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+              <span>Demo режим (Mock авторизация)</span>
+            </>
+          )}
+          {status === 'error' && (
+            <>
+              <div className="w-2 h-2 bg-red-500 rounded-full" />
+              <span>Ошибка подключения</span>
+            </>
+          )}
         </div>
       </motion.div>
     </div>
