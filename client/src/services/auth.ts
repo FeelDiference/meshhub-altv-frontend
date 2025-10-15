@@ -4,6 +4,7 @@ import axios, { AxiosResponse } from 'axios'
 import { API_CONFIG, ERROR_CODES } from '@/config/api'
 import type { User, LoginRequest, LoginResponse, SessionData } from '@/types/auth'
 import { SessionCrypto } from '@/utils/crypto'
+import { mockLogin, checkBackendAvailability } from './auth-mock'
 
 // Ключи для localStorage
 const STORAGE_KEYS = {
@@ -53,6 +54,35 @@ apiClient.interceptors.response.use(
  * Авторизация пользователя
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
+  // Проверяем доступность backend в dev режиме
+  if (import.meta.env.DEV) {
+    const isBackendAvailable = await checkBackendAvailability()
+    
+    if (!isBackendAvailable) {
+      console.log('🔧 Backend недоступен, используем mock авторизацию для демонстрации')
+      
+      try {
+        const mockResponse = await mockLogin(credentials)
+        
+        // Создаем данные сессии
+        const sessionData: SessionData = {
+          userId: mockResponse.user.id,
+          token: mockResponse.token,
+          expiresAt: Date.now() + (24 * 60 * 60 * 1000),
+        }
+
+        // Сохраняем зашифрованную сессию
+        saveSession(sessionData)
+        saveUser(mockResponse.user)
+
+        return mockResponse
+      } catch (error: any) {
+        throw new Error(error.message)
+      }
+    }
+  }
+
+  // Реальная авторизация через backend
   try {
     const response: AxiosResponse<LoginResponse> = await apiClient.post(
       API_CONFIG.endpoints.login,
