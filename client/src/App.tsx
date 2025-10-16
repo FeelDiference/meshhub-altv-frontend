@@ -4,6 +4,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
 import HandlingMetaEditor from '@/components/vehicles/HandlingMetaEditor'
+import VehicleActions from '@/components/vehicles/VehicleActions'
 import Portal from '@/components/common/Portal'
 import { fetchHandlingMeta } from '@/services/rpf'
 import { updateXmlNumericValue, paramToXmlTag } from '@/utils/updateXml'
@@ -40,6 +41,8 @@ const VehiclesPage = () => {
   const [handlingMetaXml, setHandlingMetaXml] = useState<string>('')
   const [showTuning, setShowTuning] = useState(false)
   const [showMeta, setShowMeta] = useState(false)
+  const [showActions, setShowActions] = useState(false)
+  const [focusMode, setFocusMode] = useState<'off' | 'tuning' | 'actions'>('off') // Режим фокуса: выкл / на параметры / на действия
   const panelLeft = 420 // сдвиг от левого края (примерно ширина меню + отступ)
   const [activeModel, setActiveModel] = useState<string>('')
   const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
@@ -64,6 +67,7 @@ const VehiclesPage = () => {
     if (!selectedVehicle) return
     setShowTuning(true)
     setShowMeta(true)
+    setShowActions(true)
     
     // Проверяем, есть ли уже изменённый XML в кэше
     const cachedXml = vehicleXmlCache.current.get(selectedVehicle.name)
@@ -615,29 +619,48 @@ const VehiclesPage = () => {
       {/* Right side panels (tuning + meta editor) in a portal to escape layout */}
       {panelsVisible && (
         <Portal>
-        <div className="pointer-events-auto fixed top-16 bottom-4 z-[9999] flex flex-col space-y-3" style={{ left: panelLeft, right: 24 }}>
-          {/* Header over both panels */}
-          <div
-            className="w-[1260px] max-w-[calc(100vw-480px)] rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
-            title="Скрыть/показать панели"
-            onClick={() => {
-              setPanelsVisible(v => {
-                setShowTuning(!v)
-                setShowMeta(!v)
-                return !v
-              })
-            }}
-          >
-            <div className="w-8 h-8 rounded-lg bg-violet-600/30 ring-1 ring-violet-500/40 flex items-center justify-center">
-              <Car className="w-4 h-4 text-violet-200" />
+        <div 
+          className="pointer-events-auto fixed top-16 bottom-4 z-[9999] flex flex-col space-y-3 transition-all duration-300" 
+          style={{ 
+            left: focusMode !== 'off' ? 24 : panelLeft, 
+            right: 24 
+          }}
+        >
+          {/* Header over both panels - скрыть в режиме фокуса */}
+          {focusMode === 'off' && (
+            <div
+              className="w-[1880px] max-w-[calc(100vw-480px)] rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
+              title="Скрыть/показать панели"
+              onClick={() => {
+                setPanelsVisible(v => {
+                  setShowTuning(!v)
+                  setShowMeta(!v)
+                  setShowActions(!v)
+                  return !v
+                })
+              }}
+            >
+              <div className="w-8 h-8 rounded-lg bg-violet-600/30 ring-1 ring-violet-500/40 flex items-center justify-center">
+                <Car className="w-4 h-4 text-violet-200" />
+              </div>
+              <div className="text-sm font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400">
+                {selectedVehicle?.displayName || selectedVehicle?.name || activeModel || 'Автомобиль'}
+              </div>
             </div>
-            <div className="text-sm font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400">
-              {selectedVehicle?.displayName || selectedVehicle?.name || activeModel || 'Автомобиль'}
-            </div>
-          </div>
+          )}
           <div className="flex space-x-3 flex-1 overflow-hidden">
-          {/* Tuning sliders panel - only show if vehicle is downloaded */}
-          {showTuning && selectedVehicle && vehicleStatuses.get(selectedVehicle.id) === 'downloaded' && (
+          {/* Tuning sliders panel - показывать если фокус выкл или фокус на тюнинге */}
+          {(() => {
+            const vehicleStatus = selectedVehicle ? vehicleStatuses.get(selectedVehicle.id) : null
+            console.log('[TuningPanel] Check visibility:')
+            console.log('  - focusMode:', focusMode)
+            console.log('  - showTuning:', showTuning)
+            console.log('  - selectedVehicle:', selectedVehicle?.name)
+            console.log('  - vehicleStatus:', vehicleStatus)
+            console.log('  - shouldShow:', (focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && vehicleStatus === 'downloaded')
+            return null
+          })()}
+          {(focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && vehicleStatuses.get(selectedVehicle.id) === 'downloaded' && (
             <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-3">Параметры</div>
               <TuningSliders
@@ -650,15 +673,36 @@ const VehiclesPage = () => {
                 disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
                 initialValues={handlingMetaXml}
                 vehicleKey={selectedVehicle.name}
-                currentXml={handlingMetaXml} // Это уже изменённый XML благодаря onXmlPatch
+                currentXml={handlingMetaXml}
+                onFocusModeToggle={() => setFocusMode(focusMode === 'tuning' ? 'off' : 'tuning')}
+                focusMode={focusMode === 'tuning'}
               />
             </div>
           )}
-          {/* Handling.meta editor panel */}
-          {showMeta && selectedVehicle && (
+          {/* Handling.meta editor panel - скрыть всегда в фокусе */}
+          {focusMode === 'off' && showMeta && selectedVehicle && (
             <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-2">handling.meta</div>
               <HandlingMetaEditor xml={handlingMetaXml} onXmlChange={setHandlingMetaXml} />
+            </div>
+          )}
+          
+          {/* Vehicle actions panel - показывать если фокус выкл или фокус на действиях */}
+          {(focusMode === 'off' || focusMode === 'actions') && showActions && selectedVehicle && (
+            <div 
+              className={`${
+                focusMode === 'actions' ? 'w-[400px]' : 'w-[620px]'
+              } h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left transition-all duration-300`}
+            >
+              <VehicleActions 
+                disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
+                onAction={(action, data) => {
+                  console.log('[VehiclesPage] Vehicle action:', action, data)
+                }}
+                onFocusModeToggle={() => setFocusMode(focusMode === 'actions' ? 'off' : 'actions')}
+                focusMode={focusMode === 'actions'}
+                vehicleName={selectedVehicle?.name || selectedVehicle?.modelName}
+              />
             </div>
           )}
           </div>
@@ -696,6 +740,7 @@ interface MenuItem {
 function App() {
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('dashboard')
+  const [, forceUpdate] = useState({})
   
   // Логируем информацию о пути при загрузке
   useEffect(() => {
@@ -724,8 +769,17 @@ function App() {
       }
     }
 
+    // Слушаем изменения focusMode для перерисовки
+    const handleFocusModeChange = () => {
+      forceUpdate({})
+    }
+    
+    window.addEventListener('focusModeChanged', handleFocusModeChange)
     document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('focusModeChanged', handleFocusModeChange)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [altvAvailable, closePanel])
 
   // Конфигурация меню
@@ -789,7 +843,9 @@ function App() {
   }
 
   return (
-    <div className="webview-panel w-full h-full flex flex-col animate-slide-in-right">
+    <div className={`webview-panel w-full h-full flex flex-col animate-slide-in-right transition-opacity duration-300 ${
+      (window as any).__focusMode !== 'off' && (window as any).__focusMode ? 'opacity-0 pointer-events-none' : ''
+    }`}>
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b border-base-700">
         <div className="flex items-center justify-between">

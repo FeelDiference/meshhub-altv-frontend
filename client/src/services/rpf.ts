@@ -34,5 +34,3 @@ export async function fetchHandlingMeta(vehicleName: string): Promise<string> {
   const data = await res.json()
   return data?.content || ''
 }
-
-

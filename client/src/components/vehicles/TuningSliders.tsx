@@ -1,5 +1,5 @@
 import React from 'react'
-import { RotateCcw, Save, HardDrive, Cloud } from 'lucide-react'
+import { RotateCcw, Save, HardDrive, Cloud, Maximize2, Minimize2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 // Декларация для глобального alt в WebView
@@ -121,11 +121,19 @@ function parseHandlingXml(xml: string): Record<string, number> {
   return values
 }
 
-export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, vehicleKey, currentXml }: { onChange: (parameter: string, value: number) => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string }) {
+export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode }: { onChange: (parameter: string, value: number) => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean }) {
   const [values, setValues] = React.useState<Record<string, number>>({})
   const [defaults, setDefaults] = React.useState<Record<string, number>>({})
   const lastVehicleKey = React.useRef<string | null>(null)
   const [saveMode, setSaveMode] = React.useState<'local' | 'remote'>('local')
+
+  const handleFocusToggle = () => {
+    if (onFocusModeToggle) {
+      (window as any).__focusMode = focusMode ? 'off' : 'tuning'
+      window.dispatchEvent(new Event('focusModeChanged'))
+      onFocusModeToggle()
+    }
+  }
 
   // Parse XML when initialValues changes
   React.useEffect(() => {
@@ -261,16 +269,38 @@ export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, v
     <div className="space-y-3 tuning-panel">
       {/* Блок кнопок сверху */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b border-base-700">
-        {/* Левая часть - кнопка сброса */}
-        <button
-          onClick={handleReset}
-          disabled={disabled}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-base-800 border border-base-700 hover:bg-base-700 hover:border-primary-500/50 disabled:opacity-50 transition-all group"
-          title="Сбросить параметры"
-        >
-          <RotateCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" />
-          <span>Сбросить</span>
-        </button>
+        {/* Левая часть - кнопки сброса и фокуса */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleReset}
+            disabled={disabled}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-base-800 border border-base-700 hover:bg-base-700 hover:border-primary-500/50 disabled:opacity-50 transition-all group"
+            title="Сбросить параметры"
+          >
+            <RotateCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" />
+            <span>Сбросить</span>
+          </button>
+          
+          {onFocusModeToggle && (
+            <button
+              onClick={handleFocusToggle}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-base-800 border border-base-700 hover:bg-base-700 hover:border-purple-500/50 transition-all"
+              title={focusMode ? 'Показать меню' : 'Скрыть меню'}
+            >
+              {focusMode ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Выход</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Фокус</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
 
         {/* Правая часть - переключатель и кнопка сохранения */}
         <div className="flex items-center gap-2">
