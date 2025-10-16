@@ -1,5 +1,22 @@
 import React from 'react'
 import { RotateCcw, Save, HardDrive, Cloud } from 'lucide-react'
+import toast from 'react-hot-toast'
+
+// Декларация для глобального alt в WebView
+declare global {
+  interface Window {
+    alt?: {
+      emit: (event: string, ...args: any[]) => void
+      on: (event: string, callback: (...args: any[]) => void) => void
+      off: (event: string, callback: (...args: any[]) => void) => void
+    }
+  }
+  var alt: {
+    emit: (event: string, ...args: any[]) => void
+    on: (event: string, callback: (...args: any[]) => void) => void
+    off: (event: string, callback: (...args: any[]) => void) => void
+  } | undefined
+}
 
 type SliderDef = {
   key: string
@@ -135,6 +152,7 @@ export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, v
   const handleReset = () => {
     if (!defaults || Object.keys(defaults).length === 0) {
       console.warn('[TuningSliders] Reset failed: no defaults saved!')
+      toast.error('Не удалось сбросить параметры')
       return
     }
     
@@ -150,6 +168,7 @@ export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, v
     
     // Обновляем локальное состояние ползунков
     setValues({ ...defaults })
+    toast.success('Параметры сброшены к заводским')
   }
 
   const handleSave = () => {
@@ -163,29 +182,79 @@ export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, v
   const handleSaveLocal = () => {
     if (!currentXml || !vehicleKey) {
       console.warn('[TuningSliders] No XML to save')
+      toast.error('Нет данных для сохранения')
       return
     }
 
     try {
+      // Проверяем, что мы в AltV WebView
+      if (typeof window !== 'undefined' && 'alt' in window) {
+        const eventData = {
+          vehicleName: vehicleKey,
+          xmlContent: currentXml
+        }
+        
+        console.log('[TuningSliders] 🔍 Checking alt availability...')
+        console.log('[TuningSliders] typeof alt:', typeof alt)
+        console.log('[TuningSliders] typeof window.alt:', typeof (window as any).alt)
+        console.log('[TuningSliders] Data to send:', eventData.vehicleName, 'XML length:', eventData.xmlContent.length)
+        
+        // Пробуем оба способа
+        let sent = false
+        
+        // Способ 1: Глобальный alt
+        // @ts-ignore
+        if (typeof alt !== 'undefined' && typeof alt.emit === 'function') {
+          console.log('[TuningSliders] ✅ Using global alt.emit')
+          // @ts-ignore
+          alt.emit('meshhub:vehicle:save:handling:meta', eventData)
+          sent = true
+        }
+        
+        // Способ 2: window.alt (на случай если глобальный не работает)
+        if (typeof (window as any).alt !== 'undefined' && typeof (window as any).alt.emit === 'function') {
+          console.log('[TuningSliders] ✅ Using window.alt.emit')
+          ;(window as any).alt.emit('meshhub:vehicle:save:handling:meta', eventData)
+          sent = true
+        }
+        
+        if (sent) {
+          console.log('[TuningSliders] ✅ Event sent successfully')
+          toast.success('Запрос на сохранение отправлен')
+          return
+        } else {
+          console.error('[TuningSliders] ❌ alt.emit не доступен!')
+          toast.error('Ошибка: WebView не подключён к AltV')
+          return
+        }
+      }
+
+      // Fallback для браузера - обычная загрузка
       const blob = new Blob([currentXml], { type: 'application/xml' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `${vehicleKey}_handling.meta`
+      a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      console.log('[TuningSliders] Saved locally:', `${vehicleKey}_handling.meta`)
+      
+      toast.success(`Файл ${vehicleKey}_handling.meta сохранён`)
     } catch (err) {
       console.error('[TuningSliders] Save failed:', err)
+      toast.error('Ошибка сохранения файла')
     }
   }
 
   const handleSaveRemote = () => {
     // TODO: Реализовать сохранение на сервер
     console.log('[TuningSliders] Save to remote (not implemented yet)')
-    alert('Сохранение на сервер пока не реализовано')
+    toast('Сохранение на сервер будет доступно в следующей версии', {
+      icon: '🚀',
+      duration: 4000,
+    })
   }
 
   return (

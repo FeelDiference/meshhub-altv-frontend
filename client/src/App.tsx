@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X } from 'lucide-react'
+import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
 import HandlingMetaEditor from '@/components/vehicles/HandlingMetaEditor'
@@ -25,15 +26,13 @@ const Dashboard = () => (
 )
 
 const VehiclesPage = () => {
-  console.log('[VehiclesPage] Component mounted')
-  console.log('[VehiclesPage] Window.alt available:', typeof window !== 'undefined' && 'alt' in window)
   
   const { spawnVehicle, destroyVehicle, currentVehicle, isAvailable, updateHandling, requestHandlingMeta } = useALTV({
     onVehicleSpawned: (data) => {
-      console.log('Vehicle spawned:', data)
+      toast.success(`${data.modelName} заспавнен`)
     },
     onVehicleDestroyed: (data) => {
-      console.log('Vehicle destroyed:', data)
+      toast('Автомобиль удалён', { icon: '🗑️' })
     }
   })
   // UI state for side panels
@@ -219,6 +218,7 @@ const VehiclesPage = () => {
       } catch (err: any) {
         setError(err.message)
         console.error('Ошибка загрузки автомобилей:', err)
+        toast.error('Не удалось загрузить список автомобилей')
       } finally {
         setLoading(false)
       }
@@ -241,7 +241,6 @@ const VehiclesPage = () => {
   useEffect(() => {
     if (typeof window !== 'undefined' && 'alt' in window) {
       const handleDownloaded = (data: { success: boolean; vehicleId: string; vehicleName: string; message: string }) => {
-        console.log('[Download] Result from server:', data)
         
         if (data.success) {
           // Помечаем как скачанный, но требующий рестарта
@@ -251,6 +250,9 @@ const VehiclesPage = () => {
             next.add(data.vehicleId)
             return next
           })
+          toast.success(`${data.vehicleName} успешно загружен!\nТребуется рестарт сервера`, {
+            duration: 5000,
+          })
         } else {
           setVehicleStatuses(prev => new Map(prev.set(data.vehicleId, 'not_downloaded')))
           setPendingRestartIds(prev => {
@@ -258,10 +260,30 @@ const VehiclesPage = () => {
             next.delete(data.vehicleId)
             return next
           })
+          toast.error(`Ошибка загрузки ${data.vehicleName}:\n${data.message}`, {
+            duration: 5000,
+          })
         }
       }
+
+      const handleHandlingSaved = (data: { success: boolean; fileName?: string; filePath?: string; downloadsPath?: string; error?: string }) => {
+        if (data.success) {
+          toast.success(`Файл ${data.fileName} сохранён в папку Downloads!\nПуть: ${data.downloadsPath}`, {
+            duration: 7000,
+          })
+        } else {
+          toast.error(`Ошибка сохранения: ${data.error}`, {
+            duration: 5000,
+          })
+        }
+      }
+
       ;(window as any).alt.on('vehicle:downloaded', handleDownloaded)
-      return () => (window as any).alt.off?.('vehicle:downloaded', handleDownloaded)
+      ;(window as any).alt.on('meshhub:vehicle:handling:saved', handleHandlingSaved)
+      return () => {
+        (window as any).alt.off?.('vehicle:downloaded', handleDownloaded)
+        ;(window as any).alt.off?.('meshhub:vehicle:handling:saved', handleHandlingSaved)
+      }
     }
   }, [])
 
@@ -270,51 +292,23 @@ const VehiclesPage = () => {
     if (!(typeof window !== 'undefined' && 'alt' in window)) return
     
     const onInstalled = (installedNames: string[]) => {
-      console.log('[App] Received installed list:', installedNames)
       
       // Используем callback чтобы получить актуальный список vehicles
       setVehicles(currentVehicles => {
-        console.log('[App] Comparing with', currentVehicles.length, 'vehicles from backend')
-        console.log('[App] First 5 vehicle names:', currentVehicles.slice(0, 5).map(v => v.name).join(', '))
         
-        // Дампим структуру первой машины для понимания
-        if (currentVehicles.length > 0) {
-          console.log('[App] Sample vehicle structure:', JSON.stringify(currentVehicles[0], null, 2))
-        }
         
-        // Проверяем есть ли установленные машины в списке
-        console.log('[App] Looking for installed vehicles in backend list...')
-        console.log('[App] All vehicle names from backend:', currentVehicles.map(v => v.name).join(', '))
         
         for (const installedName of installedNames) {
           const found = currentVehicles.find(v => v.name === installedName)
-          if (found) {
-            console.log(`[App] ✅ Found "${installedName}" in backend list (id: ${found.id})`)
-          } else {
-            console.log(`[App] ❌ "${installedName}" NOT FOUND in backend list`)
-            // Попробуем найти похожие названия
-            const similar = currentVehicles.filter(v => 
-              v.name?.toLowerCase().includes(installedName.toLowerCase()) ||
-              v.displayName?.toLowerCase().includes(installedName.toLowerCase()) ||
-              installedName.toLowerCase().includes(v.name?.toLowerCase() || '')
-            )
-            if (similar.length > 0) {
-              console.log(`[App] 🔍 Similar vehicles found:`, similar.map(v => `${v.name} (${v.displayName})`).join(', '))
-            }
-          }
         }
         
         setVehicleStatuses(prev => {
           const m = new Map(prev)
-          let found = 0
           for (const v of currentVehicles) {
             if (installedNames?.includes(v.name)) {
-              console.log('[App] ✅ MATCH! Marking as downloaded:', v.name)
               m.set(v.id, 'downloaded')
-              found++
             }
           }
-          console.log('[App] Total matches found:', found)
           return m
         })
         
@@ -656,7 +650,7 @@ const VehiclesPage = () => {
                 disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
                 initialValues={handlingMetaXml}
                 vehicleKey={selectedVehicle.name}
-                currentXml={handlingMetaXml}
+                currentXml={handlingMetaXml} // Это уже изменённый XML благодаря onXmlPatch
               />
             </div>
           )}
@@ -891,6 +885,33 @@ function App() {
           </div>
         </div>
       </div>
+      
+      {/* Toast Notifications */}
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#1f1f1f',
+            color: '#fff',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '8px',
+            fontSize: '14px',
+          },
+          success: {
+            iconTheme: {
+              primary: '#4ade80',
+              secondary: '#1f1f1f',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#1f1f1f',
+            },
+          },
+        }}
+      />
     </div>
   )
 }

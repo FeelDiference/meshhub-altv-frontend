@@ -11,26 +11,33 @@
     "build-resource": "./scripts/build-resource.sh"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "axios": "^1.6.0",
+    "crypto-js": "^4.2.0",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.453.0",
-    "axios": "^1.6.0",
-    "crypto-js": "^4.2.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hot-toast": "^2.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/forms": "^0.5.7",
+    "@types/crypto-js": "^4.2.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
-    "@types/crypto-js": "^4.2.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
-    "@tailwindcss/forms": "^0.5.7",
     "typescript": "^5.5.4",
     "vite": "^5.4.5"
   },
-  "keywords": ["altv", "meshhub", "webview", "vehicle", "handling"],
+  "keywords": [
+    "altv",
+    "meshhub",
+    "webview",
+    "vehicle",
+    "handling"
+  ],
   "author": "MeshHub Team",
   "license": "MIT"
 }
