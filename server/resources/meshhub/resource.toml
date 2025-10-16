@@ -1,0 +1,21 @@
+type = 'js'
+name = 'MeshHub ALT:V Integration'
+version = '1.0.0'
+description = 'WebView инструмент для управления автомобилями с интеграцией в MeshHub Backend'
+
+main = 'dist/server/index.js'
+client-main = 'client.js'
+
+client-files = [
+    'client.js',
+    'webview/**/*'
+]
+
+[client]
+# ALT:V client configuration
+
+[server]
+# ALT:V server configuration
+
+[deps]
+# Dependencies (if any)

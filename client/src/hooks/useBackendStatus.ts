@@ -1,6 +1,7 @@
 // Hook для отслеживания статуса подключения к backend
 
 import { useState, useEffect } from 'react'
+import { API_CONFIG } from '@/config/api'
 
 export type BackendStatus = 'checking' | 'connected' | 'mock' | 'error'
 
@@ -10,8 +11,8 @@ export function useBackendStatus() {
 
   const checkBackendStatus = async (): Promise<BackendStatus> => {
     try {
-      // Проверяем доступность через простой GET запрос
-      const response = await fetch('/api/health', {
+      // Проверяем доступность через прямой запрос к backend
+      const response = await fetch(`${API_CONFIG.baseUrl}/healthz`, {
         method: 'GET',
         timeout: 3000,
       } as any)

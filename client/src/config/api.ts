@@ -1,17 +1,18 @@
 // Конфигурация API для MeshHub Backend
 
+// Единый адрес сервера для всего проекта
+export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://hub.feeld.space'
+
 export const API_CONFIG = {
-  // Base URL для MeshHub Backend
-  // В dev режиме используем proxy (/api -> https://hub.feeld.space)
-  // В production будет настроен относительный путь или полный URL
-  baseUrl: import.meta.env.DEV ? '' : 'https://hub.feeld.space',
+  // Base URL для MeshHub Backend - всегда используем реальный сервер
+  baseUrl: API_BASE_URL,
   
   // Endpoints
   endpoints: {
     // Авторизация
-    login: '/api/auth/login',
-    refresh: '/api/auth/refresh',
-    logout: '/api/auth/logout',
+    login: '/auth/login',
+    refresh: '/auth/refresh-token',
+    // logout не нужен - JWT stateless, работает только на клиенте
     
     // Автомобили
     vehicles: '/api/rpf/vehicles',

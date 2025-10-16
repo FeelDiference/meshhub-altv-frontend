@@ -6,15 +6,21 @@ export interface WebViewToClientEvents {
   'vehicle:destroy': { vehicleId: number }
   'installation:check': { modelName: string }
   'handling:update': { parameter: string; value: number }
+  'handling:meta:request': { modelName: string }
   'panel:close': void
 }
 
 // События Client → WebView
 export interface ClientToWebViewEvents {
+  'panel:opened': undefined
+  'panel:closed': undefined
   'vehicle:spawned': { vehicleId: number; modelName: string; position: Vec3 }
   'vehicle:destroyed': { vehicleId: number }
   'installation:checked': { modelName: string; isInstalled: boolean }
-  'handling:applied': { parameter: string; value: number; success: boolean }
+  'handling:applied': { parameter: string; value: number; success: boolean; error?: string }
+  'player:entered:vehicle': { vehicleId: number; modelName: string }
+  'player:left:vehicle': { vehicleId: number }
+  'handling:meta:response': { modelName: string; xml: string }
 }
 
 // События Server → Client
@@ -73,6 +79,9 @@ export interface ALTVBridge {
   
   // Проверка доступности ALT:V
   isAvailable(): boolean
+  
+  // Получение текущего состояния
+  getState(): ALTVState
 }
 
 // Конфигурация ALT:V

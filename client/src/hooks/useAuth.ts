@@ -1,7 +1,8 @@
-// React hook для авторизации
+// Простой React hook для авторизации
 
 import { useState, useEffect, useCallback } from 'react'
 import * as authService from '@/services/auth'
+import { getSession } from '@/services/auth'
 import type { User, LoginRequest } from '@/types/auth'
 
 interface UseAuthState {
@@ -21,53 +22,93 @@ export function useAuth() {
 
   // Инициализация авторизации при загрузке
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const isAuthed = await authService.initializeAuth()
-        const user = isAuthed ? authService.getUser() : null
+    console.log('🔐 Инициализация авторизации...')
+    
+    try {
+      // Проверяем сохраненную сессию
+      const isAuthed = authService.isAuthenticated()
+      const user = isAuthed ? authService.getUser() : null
 
-        setState({
+      console.log('🔍 Init check: isAuthed =', isAuthed, 'user =', user)
+      console.log('🔍 Auth service session:', getSession())
+      console.log('🔍 LocalStorage session:', localStorage.getItem('auth_session'))
+      console.log('🔍 LocalStorage user:', localStorage.getItem('auth_user'))
+
+      setState(prev => {
+        console.log('🔍 setState in init: prev.isAuthenticated =', prev.isAuthenticated, '-> new:', isAuthed)
+        return {
           user,
           isAuthenticated: isAuthed,
           isLoading: false,
           error: null,
-        })
-      } catch (error) {
-        console.error('Auth initialization error:', error)
-        setState({
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-          error: 'Ошибка инициализации авторизации',
-        })
-      }
-    }
+        }
+      })
 
-    initAuth()
+      console.log(`🔐 Авторизация ${isAuthed ? 'восстановлена' : 'не найдена'}`)
+      
+    } catch (error) {
+      console.error('❌ Ошибка инициализации авторизации:', error)
+      setState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: 'Ошибка инициализации авторизации',
+      })
+    }
   }, [])
 
   // Слушаем события авторизации
   useEffect(() => {
     const handleLogout = () => {
-      setState(prev => ({
-        ...prev,
+      console.log('🔐 Обработка события logout')
+      setState({
         user: null,
         isAuthenticated: false,
+        isLoading: false,
         error: null,
-      }))
+      })
+    }
+
+    const handleBackendSuccess = () => {
+      console.log('🔐 Backend авторизация успешна')
+    }
+
+    const handleMockFallback = () => {
+      console.log('🔐 Переключение на mock авторизацию')
     }
 
     window.addEventListener('auth:logout', handleLogout)
-    return () => window.removeEventListener('auth:logout', handleLogout)
+    window.addEventListener('auth:backend-success', handleBackendSuccess)
+    window.addEventListener('auth:mock-fallback', handleMockFallback)
+    
+    return () => {
+      window.removeEventListener('auth:logout', handleLogout)
+      window.removeEventListener('auth:backend-success', handleBackendSuccess)
+      window.removeEventListener('auth:mock-fallback', handleMockFallback)
+    }
   }, [])
+
+  // Простая валидация email
+  const validateEmail = (email: string): { isValid: boolean; error?: string } => {
+    if (!email || email.trim().length === 0) {
+      return { isValid: false, error: 'Email не может быть пустым' }
+    }
+    
+    if (!email.includes('@')) {
+      return { isValid: false, error: 'Email должен содержать @' }
+    }
+    
+    return { isValid: true }
+  }
 
   // Функция входа
   const login = useCallback(async (credentials: LoginRequest): Promise<void> => {
+    console.log('🔐 Начинаем логин...')
     setState(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
       // Валидация email
-      const emailValidation = authService.validateEmail(credentials.username)
+      const emailValidation = validateEmail(credentials.email)
       if (!emailValidation.isValid) {
         throw new Error(emailValidation.error)
       }
@@ -80,7 +121,20 @@ export function useAuth() {
         isLoading: false,
         error: null,
       })
+
+      console.log('✅ Логин успешен')
+      console.log('🔐 User set:', response.user)
+      console.log('🔐 State updated: isAuthenticated =', true)
+      
+      // Принудительный перезагрузка страницы после успешного логина
+      setTimeout(() => {
+        console.log('🔄 Перезагрузка страницы для обновления интерфейса')
+        window.location.reload()
+      }, 500)
+      
     } catch (error: any) {
+      console.error('❌ Ошибка логина:', error.message)
+      
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -90,21 +144,28 @@ export function useAuth() {
     }
   }, [])
 
-  // Функция выхода
+  // Функция выхода - ПРОСТАЯ И ПОНЯТНАЯ
   const logout = useCallback(async (): Promise<void> => {
-    setState(prev => ({ ...prev, isLoading: true }))
+    console.log('🔐 Начинаем logout...')
 
     try {
+      // Вызываем logout функцию
       await authService.logout()
+      
+      // Сразу обновляем состояние (событие тоже сработает, но это не страшно)
       setState({
         user: null,
         isAuthenticated: false,
         isLoading: false,
         error: null,
       })
+      
+      console.log('✅ Logout успешен, перенаправление на логин')
+      
     } catch (error: any) {
-      console.error('Logout error:', error)
-      // Все равно очищаем состояние
+      console.error('❌ Ошибка logout (но продолжаем):', error)
+      
+      // Все равно очищаем состояние локально
       setState({
         user: null,
         isAuthenticated: false,
@@ -114,19 +175,26 @@ export function useAuth() {
     }
   }, [])
 
-  // Функция обновления токена
+  // Функция обновления токена (вызывается вручную)
   const refreshToken = useCallback(async (): Promise<void> => {
+    console.log('🔐 Обновляем токен...')
+    
     try {
       await authService.refreshToken()
       const user = authService.getUser()
+      
       setState(prev => ({
         ...prev,
         user,
         isAuthenticated: !!user,
         error: null,
       }))
+
+      console.log('✅ Токен обновлен')
+      
     } catch (error: any) {
-      console.error('Token refresh error:', error)
+      console.error('❌ Ошибка refresh токена:', error)
+      
       setState({
         user: null,
         isAuthenticated: false,
@@ -140,19 +208,6 @@ export function useAuth() {
   const clearError = useCallback(() => {
     setState(prev => ({ ...prev, error: null }))
   }, [])
-
-  // Проверка прав доступа
-  const hasPermission = useCallback((permission: string): boolean => {
-    return authService.hasPermission(permission)
-  }, [])
-
-  // Проверка ролей пользователя
-  const hasRole = useCallback((role: string): boolean => {
-    if (!state.user) return false
-    
-    // Проверяем позицию/роль пользователя
-    return state.user.position === role || state.user.department === role
-  }, [state.user])
 
   // Проверка на админа
   const isAdmin = useCallback((): boolean => {
@@ -173,8 +228,6 @@ export function useAuth() {
     clearError,
 
     // Проверки
-    hasPermission,
-    hasRole,
     isAdmin,
 
     // Вычисляемые свойства

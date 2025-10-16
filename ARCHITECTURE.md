@@ -539,3 +539,6 @@ const menuItems: MenuItem[] = [
 - **Debounce** для live обновлений (100ms)
 - **WebView optimization**: минимальный размер, только необходимые ресурсы
 
+
+
+

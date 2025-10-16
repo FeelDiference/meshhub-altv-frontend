@@ -9,10 +9,10 @@ export interface Vec3 {
 export interface VehicleResource {
   id: string
   name: string
-  displayName: string
-  modelName: string
-  path: string
-  archiveId: string
+  displayName?: string
+  modelName?: string
+  category?: string
+  tags?: string[]
   size: number
   metadata: VehicleMetadata | null
   createdAt: string

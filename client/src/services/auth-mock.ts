@@ -1,6 +1,7 @@
 // Mock версия авторизации для демонстрации (когда backend недоступен)
 
 import type { User, LoginRequest, LoginResponse } from '@/types/auth'
+import { API_CONFIG } from '@/config/api'
 
 // Mock пользователь для демонстрации
 const MOCK_USER: User = {
@@ -23,7 +24,7 @@ export async function mockLogin(credentials: LoginRequest): Promise<LoginRespons
   await new Promise(resolve => setTimeout(resolve, 1000))
 
   // Простая валидация
-  if (!credentials.username.endsWith('@1win.pro')) {
+  if (!credentials.email.endsWith('@1win.pro')) {
     throw new Error('Email должен быть в формате user@1win.pro')
   }
 
@@ -41,8 +42,8 @@ export async function mockLogin(credentials: LoginRequest): Promise<LoginRespons
     token: MOCK_TOKEN,
     user: {
       ...MOCK_USER,
-      username: credentials.username,
-      email: credentials.username,
+      username: credentials.email,
+      email: credentials.email,
     }
   }
 }
@@ -51,27 +52,35 @@ export async function mockLogin(credentials: LoginRequest): Promise<LoginRespons
  * Проверить доступность настоящего backend
  */
 export async function checkBackendAvailability(): Promise<boolean> {
-  // В dev режиме в браузере всегда используем mock из-за CORS
-  // В реальном ALT:V WebView CORS не будет проблемой
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-    console.log('🌐 Запуск в браузере (localhost) - используем mock из-за CORS ограничений')
-    return false
-  }
-
   try {
-    // В production или ALT:V пытаемся подключиться к реальному backend
+    // Пытаемся подключиться к локальному backend (теперь с CORS поддержкой)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 3000)
     
-    const response = await fetch('https://hub.feeld.space/api/health', {
+    // Используем единую конфигурацию API
+    const healthUrl = `${API_CONFIG.baseUrl}/healthz`
+    console.log('🌐 Проверка backend на', healthUrl)
+    
+    const response = await fetch(healthUrl, {
       method: 'GET',
       signal: controller.signal,
+      // Добавляем заголовки для CORS
+      headers: {
+        'Content-Type': 'application/json',
+      },
     })
     
     clearTimeout(timeoutId)
-    return response.ok
-  } catch (error) {
-    console.log('🔧 Backend недоступен или CORS блокировка, используем mock')
+    
+    if (response.ok) {
+      console.log('✅ Backend доступен - используем реальную авторизацию')
+      return true
+    } else {
+      console.log('❌ Backend вернул ошибку:', response.status, response.statusText)
+      return false
+    }
+  } catch (error: any) {
+    console.log('🔧 Backend недоступен:', error.message, '- используем mock')
     return false
   }
 }

@@ -1,25 +1,45 @@
-// Сервис авторизации с интеграцией в MeshHub Backend
+// Простая и логичная система авторизации
 
 import axios, { AxiosResponse } from 'axios'
-import { API_CONFIG, ERROR_CODES } from '@/config/api'
 import type { User, LoginRequest, LoginResponse, SessionData } from '@/types/auth'
 import { SessionCrypto } from '@/utils/crypto'
 import { mockLogin, checkBackendAvailability } from './auth-mock'
+import { API_CONFIG } from '@/config/api'
 
-// Ключи для localStorage
-const STORAGE_KEYS = {
-  SESSION: 'meshhub_altv_session',
-  USER: 'meshhub_altv_user',
-} as const
+// Типы для ответа от backend
+interface BackendLoginResponse {
+  access_token: string
+  expires_in: number
+  user: {
+    id: string
+    email: string
+    first_name: string
+    last_name: string
+    is_admin: boolean
+    is_super_admin?: boolean
+    [key: string]: any
+  }
+}
 
-// Создаем экземпляр axios с базовой конфигурацией
-const apiClient = axios.create({
+// Создаем отдельный axios клиент без interceptor'ов для auth запросов
+const authClient = axios.create({
   baseURL: API_CONFIG.baseUrl,
-  timeout: API_CONFIG.timeouts.default,
-  headers: API_CONFIG.defaultHeaders,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 })
 
-// Интерцептор для добавления токена к запросам
+// Создаем основной клиент с простым interceptor'ом
+const apiClient = axios.create({
+  baseURL: API_CONFIG.baseUrl,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// ПРОСТОЙ interceptor - только добавляет токен, без автоматического refresh
 apiClient.interceptors.request.use((config) => {
   const token = getAccessToken()
   if (token) {
@@ -28,305 +48,253 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-// Интерцептор для обработки ответов
-apiClient.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      // Токен истек, попробуем обновить
-      try {
-        await refreshToken()
-        // Повторяем оригинальный запрос
-        return apiClient.request(error.config)
-      } catch (refreshError) {
-        // Refresh не удался, очищаем сессию
-        clearSession()
-        // Можно dispatch event для уведомления UI о разлогине
-        window.dispatchEvent(new CustomEvent('auth:logout'))
-        throw error
-      }
-    }
-    throw error
-  }
-)
+// Экспортируем клиенты для использования в других местах
+export { apiClient, authClient }
 
 /**
- * Авторизация пользователя
+ * АВТОРИЗАЦИЯ
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
-  // Сначала пытаемся реальную авторизацию через backend (с proxy в dev)
+  console.log('🚪 Начинаем авторизацию...')
+
+  // Проверяем доступность backend'а
+  const backendAvailable = await checkBackendAvailability()
+  
+  if (backendAvailable) {
+    // РЕАЛЬНАЯ авторизация через backend
+    console.log('📡 Авторизация через MeshHub Backend...')
+    
+    try {
+      const response: AxiosResponse<BackendLoginResponse> = await authClient.post(
+        API_CONFIG.endpoints.login,
+        credentials
+      )
+
+      console.log('✅ Успешная авторизация через backend')
+      console.log('📋 Response data:', response.data)
+      
+      const { access_token, user: backendUser } = response.data
+      
+      // Адаптируем структуру пользователя под frontend типы
+      const user = {
+        id: backendUser.id,
+        username: backendUser.email, // Используем email как username
+        email: backendUser.email,
+        department: 'IT', // Временно устанавливаем значения по умолчанию
+        position: backendUser.is_super_admin ? 'Super Admin' : backendUser.is_admin ? 'Admin' : 'User',
+        avatar: '',
+      }
+      
+      const sessionData: SessionData = {
+        userId: user.id,
+        token: access_token,
+        expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа
+      }
+
+      saveSession(sessionData)
+      saveUser(user)
+      
+      window.dispatchEvent(new CustomEvent('auth:backend-success'))
+      // Возвращаем адаптированный ответ
+      return {
+        success: true,
+        token: access_token,
+        user: user,
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Backend авторизация не удалась:', error.message)
+      
+      if (error.response?.status === 401) {
+        throw new Error('Неверные учетные данные')
+      } else if (error.response?.status >= 500) {
+        throw new Error('Ошибка сервера. Попробуйте позже.')
+      } else {
+        throw new Error('Ошибка подключения к серверу')
+      }
+    }
+    
+  } else {
+    // DEMO авторизация 
+    console.log('🎭 Demo режим - используем mock авторизацию')
+    
+    try {
+      const mockResponse = await mockLogin(credentials)
+      console.log('🎭 Mock response:', mockResponse)
+      
+      const sessionData: SessionData = {
+        userId: mockResponse.user.id,
+        token: mockResponse.token,
+        expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа
+      }
+
+      saveSession(sessionData)
+      saveUser(mockResponse.user)
+      
+      window.dispatchEvent(new CustomEvent('auth:mock-fallback'))
+      return mockResponse
+      
+    } catch (mockError: any) {
+      throw new Error(mockError.message)
+    }
+  }
+}
+
+/**
+ * ОБНОВЛЕНИЕ ТОКЕНА (только по требованию)
+ */
+export async function refreshToken(): Promise<void> {
+  console.log('🔄 Обновление токена...')
+
+  // Проверяем есть ли вообще сессия
+  const session = getSession()
+  if (!session) {
+    throw new Error('No session to refresh')
+  }
+
+  // Проверяем доступность backend'а
+  const backendAvailable = await checkBackendAvailability()
+  
+  if (!backendAvailable) {
+    console.log('🎭 Demo режим - токен не нуждается в обновлении')
+    return // В demo режиме токены не истекают
+  }
+
   try {
-    console.log('🔄 Попытка авторизации через MeshHub Backend...')
-    
-    const response: AxiosResponse<LoginResponse> = await apiClient.post(
-      API_CONFIG.endpoints.login,
-      credentials
-    )
+    const response = await authClient.post(API_CONFIG.endpoints.refresh, {
+      refreshToken: session.token // Используем существующий токен как refresh
+    })
 
-    console.log('✅ Успешная авторизация через backend')
-    
     const { token, user } = response.data
-
-    // Создаем данные сессии
     const sessionData: SessionData = {
       userId: user.id,
       token,
-      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа по умолчанию
-    }
-
-    // Сохраняем зашифрованную сессию
-    saveSession(sessionData)
-    saveUser(user)
-
-    // Уведомляем о успешном подключении к backend
-    window.dispatchEvent(new CustomEvent('auth:backend-success'))
-
-    return response.data
-    
-  } catch (error: any) {
-    console.log('❌ Ошибка авторизации через backend:', error.message)
-    
-    // Если backend недоступен, используем mock в dev режиме
-    if (import.meta.env.DEV && (
-      error.code === 'ERR_NETWORK' || 
-      error.code === 'ECONNABORTED' ||
-      error.response?.status >= 500
-    )) {
-      console.log('🎭 Backend недоступен, переключаемся на mock авторизацию')
-      
-      try {
-        const mockResponse = await mockLogin(credentials)
-        
-        // Создаем данные сессии
-        const sessionData: SessionData = {
-          userId: mockResponse.user.id,
-          token: mockResponse.token,
-          expiresAt: Date.now() + (24 * 60 * 60 * 1000),
-        }
-
-        // Сохраняем зашифрованную сессию
-        saveSession(sessionData)
-        saveUser(mockResponse.user)
-
-        // Уведомляем о переключении на mock
-        window.dispatchEvent(new CustomEvent('auth:mock-fallback'))
-
-        return mockResponse
-      } catch (mockError: any) {
-        throw new Error(mockError.message)
-      }
-    }
-    
-    // Обработка других ошибок
-    if (error.response?.status === 401) {
-      throw new Error('Неверный логин или пароль')
-    } else if (error.response?.status === 429) {
-      throw new Error('Слишком много попыток входа. Попробуйте через минуту')
-    } else if (error.code === 'ECONNABORTED') {
-      throw new Error('Превышено время ожидания. Проверьте интернет-соединение')
-    } else {
-      throw new Error(error.response?.data?.message || 'Ошибка при входе в систему')
-    }
-  }
-}
-
-/**
- * Обновление токена
- */
-export async function refreshToken(): Promise<void> {
-  try {
-    const response: AxiosResponse<{ access_token: string; user: User }> = await apiClient.post(
-      API_CONFIG.endpoints.refresh
-    )
-
-    const { access_token, user } = response.data
-
-    // Обновляем сессию
-    const sessionData: SessionData = {
-      userId: user.id,
-      token: access_token,
-      expiresAt: Date.now() + (24 * 60 * 60 * 1000),
+      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа
     }
 
     saveSession(sessionData)
     saveUser(user)
+    
+    console.log('✅ Токен обновлен')
+    
   } catch (error) {
-    console.error('Token refresh failed:', error)
+    console.error('❌ Refresh токена не удался:', error)
+    // При ошибке refresh - разлогиниваем пользователя
+    await logout()
     throw error
   }
 }
 
 /**
- * Выход из системы
+ * ВЫХОД ИЗ СИСТЕМЫ (простой и понятный)
  */
 export async function logout(): Promise<void> {
-  try {
-    // Отправляем запрос на logout (опционально)
-    await apiClient.post(API_CONFIG.endpoints.logout)
-  } catch (error) {
-    console.error('Logout request failed:', error)
-    // Продолжаем очистку локальных данных даже если запрос не удался
-  } finally {
-    clearSession()
-    window.dispatchEvent(new CustomEvent('auth:logout'))
-  }
+  console.log('🚪 Выход из системы...')
+
+  // JWT токены stateless - logout работает только на клиенте
+  // Нет необходимости обращаться к серверу
+  console.log('🗑️ Очищаем локальные данные авторизации...')
+
+  // ВСЕГДА очищаем локальные данные
+  clearSession()
+  window.dispatchEvent(new CustomEvent('auth:logout'))
+  
+  console.log('✅ Logout завершен')
 }
 
 /**
- * Получить токен доступа
+ * ПРОВЕРКА ВАЛИДНОСТИ ТОКЕНА
+ */
+export function isTokenValid(): boolean {
+  const session = getSession()
+  if (!session) return false
+  
+  // Всегда проверяем срок действия токена
+  
+  // В реальном режиме проверяем срок действия
+  return session.expiresAt > Date.now()
+}
+
+/**
+ * ПОЛУЧИТЬ ТОКЕН ДОСТУПА
  */
 export function getAccessToken(): string | null {
   const session = getSession()
-  return session?.token || null
+  return session && isTokenValid() ? session.token : null
 }
 
 /**
- * Получить данные пользователя
- */
-export function getUser(): User | null {
-  try {
-    const encryptedUser = localStorage.getItem(STORAGE_KEYS.USER)
-    if (!encryptedUser) return null
-
-    const user = SessionCrypto.decrypt(encryptedUser)
-    return user as User
-  } catch (error) {
-    console.error('Failed to decrypt user data:', error)
-    return null
-  }
-}
-
-/**
- * Проверить авторизацию
+ * ПРОВЕРКА АВТОРИЗАЦИИ
  */
 export function isAuthenticated(): boolean {
   const session = getSession()
-  if (!session) return false
-
-  // Проверяем срок действия токена
-  if (Date.now() > session.expiresAt) {
-    clearSession()
-    return false
-  }
-
-  return true
-}
-
-/**
- * Проверить права пользователя
- */
-export function hasPermission(permission: string): boolean {
   const user = getUser()
-  if (!user) return false
-
-  // Супер админ имеет все права
-  if (user.department === 'IT' && user.position === 'Admin') {
-    return true
-  }
-
-  // Проверяем конкретные права (если будут добавлены в типы)
-  return false
+  return !!(session && user && isTokenValid())
 }
 
 /**
- * Сохранить сессию (зашифрованно)
+ * СОХРАНЕНИЕ СЕССИИ (зашифрованно)
  */
 function saveSession(sessionData: SessionData): void {
   try {
-    const encrypted = SessionCrypto.encrypt(sessionData)
-    localStorage.setItem(STORAGE_KEYS.SESSION, encrypted)
+    const encryptedData = SessionCrypto.encrypt(JSON.stringify(sessionData))
+    localStorage.setItem('auth_session', encryptedData)
   } catch (error) {
     console.error('Failed to save session:', error)
-    throw new Error('Ошибка сохранения сессии')
   }
 }
 
 /**
- * Получить сессию
+ * ПОЛУЧЕНИЕ СЕССИИ (расшифровка)
  */
 function getSession(): SessionData | null {
   try {
-    const encryptedSession = localStorage.getItem(STORAGE_KEYS.SESSION)
-    if (!encryptedSession) return null
+    const encryptedData = localStorage.getItem('auth_session')
+    if (!encryptedData) return null
 
-    const session = SessionCrypto.decrypt(encryptedSession)
-    return session as SessionData
+    const decryptedData = SessionCrypto.decrypt(encryptedData)
+    return JSON.parse(decryptedData)
   } catch (error) {
-    console.error('Failed to decrypt session:', error)
-    // Очищаем поврежденную сессию
-    localStorage.removeItem(STORAGE_KEYS.SESSION)
+    console.error('Failed to get session:', error)
     return null
   }
 }
 
 /**
- * Сохранить данные пользователя (зашифрованно)
+ * ЭКСПОРТ ФУНКЦИИ ПОЛУЧЕНИЯ СЕССИИ ДЛЯ ОТЛАДКИ
+ */
+export { getSession }
+
+/**
+ * ОЧИСТКА СЕССИИ
+ */
+function clearSession(): void {
+  localStorage.removeItem('auth_session')
+  localStorage.removeItem('auth_user')
+}
+
+/**
+ * СОХРАНЕНИЕ ПОЛЬЗОВАТЕЛЯ
  */
 function saveUser(user: User): void {
   try {
-    const encrypted = SessionCrypto.encrypt(user)
-    localStorage.setItem(STORAGE_KEYS.USER, encrypted)
+    localStorage.setItem('auth_user', JSON.stringify(user))
   } catch (error) {
-    console.error('Failed to save user data:', error)
-    throw new Error('Ошибка сохранения данных пользователя')
+    console.error('Failed to save user:', error)
   }
 }
 
 /**
- * Очистить сессию
+ * ПОЛУЧЕНИЕ ПОЛЬЗОВАТЕЛЯ
  */
-function clearSession(): void {
-  localStorage.removeItem(STORAGE_KEYS.SESSION)
-  localStorage.removeItem(STORAGE_KEYS.USER)
+export function getUser(): User | null {
+  try {
+    const userData = localStorage.getItem('auth_user')
+    return userData ? JSON.parse(userData) : null
+  } catch (error) {
+    console.error('Failed to get user:', error)
+    return null
+  }
 }
 
-/**
- * Проверить email на соответствие формату
- */
-export function validateEmail(email: string): { isValid: boolean; error?: string } {
-  if (!email) {
-    return { isValid: false, error: 'Email не может быть пустым' }
-  }
-
-  if (!email.includes('@')) {
-    return { isValid: false, error: 'Некорректный формат email' }
-  }
-
-  // Проверяем домен согласно основному проекту
-  if (!email.endsWith('@1win.pro')) {
-    return { isValid: false, error: 'Email должен быть в формате user@1win.pro' }
-  }
-
-  return { isValid: true }
-}
-
-/**
- * Автоматическая проверка и обновление токена при загрузке
- */
-export function initializeAuth(): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      if (!isAuthenticated()) {
-        resolve(false)
-        return
-      }
-
-      // Если токен скоро истечет (< 1 часа), обновляем его
-      const session = getSession()
-      if (session && (session.expiresAt - Date.now()) < (60 * 60 * 1000)) {
-        refreshToken()
-          .then(() => resolve(true))
-          .catch(() => {
-            clearSession()
-            resolve(false)
-          })
-      } else {
-        resolve(true)
-      }
-    } catch (error) {
-      console.error('Auth initialization failed:', error)
-      clearSession()
-      resolve(false)
-    }
-  })
-}
+console.log('🔐 Auth service loaded - simple & clean version')

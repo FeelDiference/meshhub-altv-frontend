@@ -1,8 +1,19 @@
-import React, { useState } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X } from 'lucide-react'
 import { LoginPage } from '@/pages/LoginPage'
+import TuningSliders from '@/components/vehicles/TuningSliders'
+import HandlingMetaEditor from '@/components/vehicles/HandlingMetaEditor'
+import Portal from '@/components/common/Portal'
+import { fetchHandlingMeta } from '@/services/rpf'
+import { updateXmlNumericValue, paramToXmlTag } from '@/utils/updateXml'
 import { useAuth } from '@/hooks/useAuth'
+import { useALTV } from '@/hooks/useALTV'
 import { Button } from '@/components/common/Button'
+import { getVehicles } from '@/services/vehicles'
+import type { VehicleResource } from '@/types/vehicle'
+import { logAppPathInfo } from '@/utils/pathDetection'
+import { downloadVehicleWithStatus, reloadVehicle, type VehicleStatus } from '@/services/vehicleManager'
+import { getAccessToken } from '@/services/auth'
 
 const Dashboard = () => (
   <div className="flex-1 p-6">
@@ -13,12 +24,656 @@ const Dashboard = () => (
   </div>
 )
 
-const VehiclesPage = () => (
-  <div className="flex-1 p-6">
-    <h1 className="text-2xl font-bold text-white mb-4">Автомобили</h1>
-    <p className="text-gray-400">Модуль управления автомобилями (в разработке)</p>
-  </div>
-)
+const VehiclesPage = () => {
+  console.log('[VehiclesPage] Component mounted')
+  console.log('[VehiclesPage] Window.alt available:', typeof window !== 'undefined' && 'alt' in window)
+  
+  const { spawnVehicle, destroyVehicle, currentVehicle, isAvailable, updateHandling, requestHandlingMeta } = useALTV({
+    onVehicleSpawned: (data) => {
+      console.log('Vehicle spawned:', data)
+    },
+    onVehicleDestroyed: (data) => {
+      console.log('Vehicle destroyed:', data)
+    }
+  })
+  // UI state for side panels
+  const [selectedVehicle, setSelectedVehicle] = useState<VehicleResource | null>(null)
+  const [handlingMetaXml, setHandlingMetaXml] = useState<string>('')
+  const [showTuning, setShowTuning] = useState(false)
+  const [showMeta, setShowMeta] = useState(false)
+  const panelLeft = 420 // сдвиг от левого края (примерно ширина меню + отступ)
+  const [activeModel, setActiveModel] = useState<string>('')
+  const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
+  const [pendingModelToSelect, setPendingModelToSelect] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  
+  // Хранилище изменённых XML для каждой машины (ключ = vehicle.name)
+  const vehicleXmlCache = React.useRef<Map<string, string>>(new Map())
+  // Отслеживаем какой машине принадлежит текущий XML
+  const currentXmlVehicleName = React.useRef<string | null>(null)
+
+  // Сохраняем изменения XML в кэш при каждом обновлении
+  useEffect(() => {
+    if (selectedVehicle && handlingMetaXml && currentXmlVehicleName.current === selectedVehicle.name) {
+      console.log('[VehiclesPage] Updating XML cache for', selectedVehicle.name)
+      vehicleXmlCache.current.set(selectedVehicle.name, handlingMetaXml)
+    }
+  }, [handlingMetaXml, selectedVehicle])
+
+  // When vehicle selected or entered, show panels and request handling meta
+  useEffect(() => {
+    if (!selectedVehicle) return
+    setShowTuning(true)
+    setShowMeta(true)
+    
+    // Проверяем, есть ли уже изменённый XML в кэше
+    const cachedXml = vehicleXmlCache.current.get(selectedVehicle.name)
+    if (cachedXml) {
+      console.log('[VehiclesPage] Loading XML from cache for', selectedVehicle.name)
+      setHandlingMetaXml(cachedXml)
+      // Помечаем, что текущий XML принадлежит этой машине
+      currentXmlVehicleName.current = selectedVehicle.name
+      return
+    }
+    
+    // Если нет в кэше — загружаем реальный handling.meta с бэка
+    console.log('[VehiclesPage] Fetching fresh XML for', selectedVehicle.name)
+    fetchHandlingMeta(selectedVehicle.name)
+      .then(xml => {
+        setHandlingMetaXml(xml)
+        // Помечаем, что текущий XML принадлежит этой машине
+        currentXmlVehicleName.current = selectedVehicle.name
+        // Сохраняем оригинал в кэш при первой загрузке
+        vehicleXmlCache.current.set(selectedVehicle.name, xml)
+      })
+      .catch(() => {
+        // fallback через ALT (если будет предоставлен) или оставить пусто
+        if (typeof window !== 'undefined' && 'alt' in window) {
+          requestHandlingMeta(selectedVehicle.modelName || selectedVehicle.name)
+        }
+      })
+  }, [selectedVehicle, requestHandlingMeta])
+
+  // Listen for handling.meta response
+  useEffect(() => {
+    if (!(typeof window !== 'undefined' && 'alt' in window)) return
+    
+    // Авто-открытие/закрытие при посадке/выходе
+    const onEnter = (data: any) => {
+      console.log('[VehiclesPage] Player entered vehicle:', data)
+      const mdl = data?.modelName || currentVehicle?.modelName
+      if (!mdl) return
+      
+      setActiveModel(mdl)
+      
+      // Используем callback для доступа к свежему vehicles
+      setVehicles(currentVehicles => {
+        const found = currentVehicles.find(x => (x.modelName || x.name) === mdl)
+        if (found) {
+          console.log('[VehiclesPage] Found vehicle in list:', found.name)
+          setSelectedVehicle(found)
+          setPanelsVisible(true)
+          setShowTuning(true)
+          setShowMeta(true)
+          
+          // Проверяем кэш перед загрузкой
+          const cachedXml = vehicleXmlCache.current.get(found.name)
+          if (cachedXml) {
+            console.log('[VehiclesPage] onEnter: Loading XML from cache for', found.name)
+            setHandlingMetaXml(cachedXml)
+            currentXmlVehicleName.current = found.name
+          } else {
+            // Загружаем handling.meta для этой машины
+            fetchHandlingMeta(found.name)
+              .then(xml => {
+                console.log('[VehiclesPage] onEnter: Loaded handling.meta for', found.name)
+                setHandlingMetaXml(xml)
+                currentXmlVehicleName.current = found.name
+                vehicleXmlCache.current.set(found.name, xml)
+              })
+              .catch((err) => {
+                console.warn('[VehiclesPage] Failed to fetch handling.meta:', err)
+              })
+          }
+        } else {
+          console.warn('[VehiclesPage] Vehicle not found in list:', mdl)
+          setPendingModelToSelect(mdl)
+        }
+        return currentVehicles // Возвращаем без изменений
+      })
+    }
+    
+    const onLeft = () => {
+      setShowTuning(false)
+      setShowMeta(false)
+      setPanelsVisible(false)
+    }
+    
+    const onMeta = (data: { modelName: string; xml: string }) => {
+      console.log('[VehiclesPage] onMeta: Received XML for', data.modelName)
+      setHandlingMetaXml(data.xml || '')
+      // Обновляем кэш - используем callback для доступа к selectedVehicle
+      setSelectedVehicle(current => {
+        if (current && data.modelName === (current.modelName || current.name)) {
+          currentXmlVehicleName.current = current.name
+          vehicleXmlCache.current.set(current.name, data.xml || '')
+        }
+        return current
+      })
+    }
+    
+    const onPanelOpened = () => {}
+    const onPanelClosed = () => {}
+    
+    ;(window as any).alt.on('handling:meta:response', onMeta)
+    ;(window as any).alt.on('player:entered:vehicle', onEnter)
+    ;(window as any).alt.on('player:left:vehicle', onLeft)
+    ;(window as any).alt.on('altv:panel:opened', onPanelOpened)
+    ;(window as any).alt.on('altv:panel:closed', onPanelClosed)
+    
+    return () => {
+      (window as any).alt.off?.('handling:meta:response', onMeta)
+      ;(window as any).alt.off?.('player:entered:vehicle', onEnter)
+      ;(window as any).alt.off?.('player:left:vehicle', onLeft)
+      ;(window as any).alt.off?.('altv:panel:opened', onPanelOpened)
+      ;(window as any).alt.off?.('altv:panel:closed', onPanelClosed)
+    }
+  }, [currentVehicle])
+  
+  console.log('[VehiclesPage] useALTV isAvailable:', isAvailable)
+
+  const [vehicles, setVehicles] = useState<VehicleResource[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [vehicleStatuses, setVehicleStatuses] = useState<Map<string, VehicleStatus>>(new Map())
+  const [pendingRestartIds, setPendingRestartIds] = useState<Set<string>>(new Set())
+
+  // Загружаем автомобили с backend
+  useEffect(() => {
+    const loadVehicles = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const vehiclesList = await getVehicles()
+        setVehicles(vehiclesList)
+        try { (window as any).alt?.emit?.('vehicles:list:sync', vehiclesList) } catch {}
+        try { (window as any).alt?.emit?.('vehicles:list:sync', vehiclesList) } catch {}
+        
+        // Запросить у сервера список уже установленных ресурсов (Alt:V)
+        if (typeof window !== 'undefined' && 'alt' in window) {
+          try {
+            // Просто запрашиваем полный список установленных (без параметров)
+            ;(window as any).alt.emit('vehicle:installed:list:request')
+          } catch (e) {
+            console.warn('[Installed] Request failed:', e)
+          }
+        }
+        
+        // В браузере - показываем все как не скачанные
+        const statusMap = new Map<string, VehicleStatus>()
+        for (const vehicle of vehiclesList) {
+          statusMap.set(vehicle.id, 'not_downloaded')
+        }
+        setVehicleStatuses(statusMap)
+        
+      } catch (err: any) {
+        setError(err.message)
+        console.error('Ошибка загрузки автомобилей:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    loadVehicles()
+  }, [])
+
+  // Дожимаем выбор машины, если событие пришло раньше, чем загрузился список
+  useEffect(() => {
+    if (!pendingModelToSelect) return
+    const found = vehicles.find(v => (v.modelName || v.name) === pendingModelToSelect)
+    if (found) {
+      setSelectedVehicle(found)
+      setPendingModelToSelect(null)
+    }
+  }, [vehicles, pendingModelToSelect])
+  
+  // Сервер сообщил об успешной загрузке архива
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handleDownloaded = (data: { success: boolean; vehicleId: string; vehicleName: string; message: string }) => {
+        console.log('[Download] Result from server:', data)
+        
+        if (data.success) {
+          // Помечаем как скачанный, но требующий рестарта
+          setVehicleStatuses(prev => new Map(prev.set(data.vehicleId, 'downloaded')))
+          setPendingRestartIds(prev => {
+            const next = new Set(prev)
+            next.add(data.vehicleId)
+            return next
+          })
+        } else {
+          setVehicleStatuses(prev => new Map(prev.set(data.vehicleId, 'not_downloaded')))
+          setPendingRestartIds(prev => {
+            const next = new Set(prev)
+            next.delete(data.vehicleId)
+            return next
+          })
+        }
+      }
+      ;(window as any).alt.on('vehicle:downloaded', handleDownloaded)
+      return () => (window as any).alt.off?.('vehicle:downloaded', handleDownloaded)
+    }
+  }, [])
+
+  // Получить список уже установленных от сервера и обновить статусы
+  useEffect(() => {
+    if (!(typeof window !== 'undefined' && 'alt' in window)) return
+    
+    const onInstalled = (installedNames: string[]) => {
+      console.log('[App] Received installed list:', installedNames)
+      
+      // Используем callback чтобы получить актуальный список vehicles
+      setVehicles(currentVehicles => {
+        console.log('[App] Comparing with', currentVehicles.length, 'vehicles from backend')
+        console.log('[App] First 5 vehicle names:', currentVehicles.slice(0, 5).map(v => v.name).join(', '))
+        
+        // Дампим структуру первой машины для понимания
+        if (currentVehicles.length > 0) {
+          console.log('[App] Sample vehicle structure:', JSON.stringify(currentVehicles[0], null, 2))
+        }
+        
+        // Проверяем есть ли установленные машины в списке
+        console.log('[App] Looking for installed vehicles in backend list...')
+        console.log('[App] All vehicle names from backend:', currentVehicles.map(v => v.name).join(', '))
+        
+        for (const installedName of installedNames) {
+          const found = currentVehicles.find(v => v.name === installedName)
+          if (found) {
+            console.log(`[App] ✅ Found "${installedName}" in backend list (id: ${found.id})`)
+          } else {
+            console.log(`[App] ❌ "${installedName}" NOT FOUND in backend list`)
+            // Попробуем найти похожие названия
+            const similar = currentVehicles.filter(v => 
+              v.name?.toLowerCase().includes(installedName.toLowerCase()) ||
+              v.displayName?.toLowerCase().includes(installedName.toLowerCase()) ||
+              installedName.toLowerCase().includes(v.name?.toLowerCase() || '')
+            )
+            if (similar.length > 0) {
+              console.log(`[App] 🔍 Similar vehicles found:`, similar.map(v => `${v.name} (${v.displayName})`).join(', '))
+            }
+          }
+        }
+        
+        setVehicleStatuses(prev => {
+          const m = new Map(prev)
+          let found = 0
+          for (const v of currentVehicles) {
+            if (installedNames?.includes(v.name)) {
+              console.log('[App] ✅ MATCH! Marking as downloaded:', v.name)
+              m.set(v.id, 'downloaded')
+              found++
+            }
+          }
+          console.log('[App] Total matches found:', found)
+          return m
+        })
+        
+        // Сбросить флаг ожидания рестарта для уже установленных
+        setPendingRestartIds(prev => {
+          const next = new Set(prev)
+          for (const v of currentVehicles) {
+            if (installedNames?.includes(v.name)) next.delete(v.id)
+          }
+          return next
+        })
+        
+        return currentVehicles // Возвращаем без изменений
+      })
+    }
+    
+    ;(window as any).alt.on('vehicle:installed:list:response', onInstalled)
+    return () => (window as any).alt.off?.('vehicle:installed:list:response', onInstalled)
+  }, [])
+
+  // Фильтрация машин по поиску
+  const filteredVehicles = vehicles
+    .filter(v => {
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        v.name?.toLowerCase().includes(q) ||
+        v.displayName?.toLowerCase().includes(q) ||
+        v.modelName?.toLowerCase().includes(q) ||
+        v.manufacturer?.toLowerCase().includes(q)
+      )
+    })
+    .sort((a, b) => {
+      // Установленные машины сверху
+      const aInstalled = vehicleStatuses.get(a.id) === 'downloaded'
+      const bInstalled = vehicleStatuses.get(b.id) === 'downloaded'
+      
+      if (aInstalled && !bInstalled) return -1
+      if (!aInstalled && bInstalled) return 1
+      
+      // Если обе установлены или обе не установлены - по имени
+      return (a.displayName || a.name).localeCompare(b.displayName || b.name)
+    })
+
+  return (
+    <div className="flex-1 p-6 relative">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white mb-2">Автомобили</h1>
+        <div className="flex items-center space-x-2 text-sm mb-4">
+          <div className={`px-2 py-1 rounded-full text-xs ${
+            isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'
+          }`}>
+            {isAvailable ? '🎮 ALT:V' : '🌐 Browser'}
+          </div>
+          {currentVehicle && (
+            <div className="px-2 py-1 bg-blue-900 text-blue-300 rounded-full text-xs">
+              Current: {currentVehicle.modelName}
+            </div>
+          )}
+        </div>
+        
+        {/* Поиск */}
+        <div className="space-y-2">
+          <div className="relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <Search className="w-4 h-4 text-gray-500" />
+            </div>
+            <input
+              type="text"
+              placeholder="Поиск по названию, модели, производителю..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-10 py-2.5 bg-base-800/50 border border-base-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="text-xs text-gray-500">
+              Найдено: <span className="text-primary-400 font-medium">{filteredVehicles.length}</span> из {vehicles.length}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Vehicle Grid */}
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
+          <span className="ml-2 text-gray-400">Загрузка автомобилей...</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-red-400" />
+            <span className="text-red-400 text-sm">{error}</span>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="grid grid-cols-1 gap-3">
+          {filteredVehicles.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              {searchQuery ? `Ничего не найдено по запросу "${searchQuery}"` : 'Автомобили не найдены'}
+            </div>
+          ) : (
+            filteredVehicles.map((vehicle) => {
+              const vehicleStatus = vehicleStatuses.get(vehicle.id) || 'not_downloaded'
+              const isDownloaded = vehicleStatus === 'downloaded'
+              const isChecking = vehicleStatus === 'checking'
+              const isPendingRestart = pendingRestartIds.has(vehicle.id)
+              
+              const handleDownload = async () => {
+                try {
+                  setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'checking')))
+                  const isAltV = typeof window !== 'undefined' && 'alt' in window
+                  console.log(`[Download] Alt:V available: ${isAltV}`)
+                  if (isAltV) {
+                    const token = getAccessToken()
+                    if (!token) {
+                      console.error('[Download] Токен не найден в localStorage')
+                      throw new Error('Токен авторизации не найден')
+                    }
+                    console.log(`[Download] Отправляем запрос на server-side скачивание: ${vehicle.name}`)
+                    console.log(`[Download] Vehicle ID: ${vehicle.id}`)
+                    console.log(`[Download] Token: ${token.substring(0, 20)}...`)
+                    ;(window as any).alt.emit('vehicle:download', {
+                      vehicleId: vehicle.id,
+                      vehicleName: vehicle.name,
+                      token: token
+                    })
+                    console.log('[Download] Событие отправлено, ожидаем ответ от сервера...')
+                  } else {
+                    console.log('[Download] Браузерный режим - скачивание через blob')
+                    await downloadVehicleWithStatus(vehicle)
+                  }
+                } catch (error) {
+                  console.error('Ошибка скачивания:', error)
+                  setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'not_downloaded')))
+                  setPendingRestartIds(prev => { const next = new Set(prev); next.delete(vehicle.id); return next })
+                }
+              }
+              
+              const handleReload = async () => {
+                try {
+                  setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'checking')))
+                  await reloadVehicle(vehicle)
+                  setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'downloaded')))
+                  setPendingRestartIds(prev => { const next = new Set(prev); next.add(vehicle.id); return next })
+                } catch (error) {
+                  console.error('Ошибка перезагрузки:', error)
+                  setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'not_downloaded')))
+                  setPendingRestartIds(prev => { const next = new Set(prev); next.delete(vehicle.id); return next })
+                }
+              }
+              
+              const handleSpawn = () => {
+                spawnVehicle(vehicle.modelName || vehicle.name)
+              }
+              
+              const isActive = panelsVisible && selectedVehicle?.id === vehicle.id
+              const isCurrentVehicle = currentVehicle && (currentVehicle.modelName === vehicle.name || currentVehicle.modelName === vehicle.modelName)
+              return (
+                <div
+                  key={vehicle.id}
+                  className={`relative p-4 rounded-lg border transition-colors ${
+                    isActive
+                      ? 'border-fuchsia-500/60 bg-fuchsia-900/10'
+                      : 'bg-base-800 border-base-700 hover:bg-base-700'
+                  }`}
+                  onClick={() => {
+                    // если кликаем по уже выбранной — переключаем видимость
+                    setPanelsVisible(v => {
+                      const same = selectedVehicle?.id === vehicle.id
+                      const nextVisible = same ? !v : true
+                      setShowTuning(nextVisible)
+                      setShowMeta(nextVisible)
+                      return nextVisible
+                    })
+                    setSelectedVehicle(vehicle)
+                  }}
+                >
+                  {isActive && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-pink-500 to-fuchsia-500 rounded-l" />
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="text-sm font-medium flex items-center space-x-2">
+                        {isCurrentVehicle && (
+                          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="Вы в этой машине" />
+                        )}
+                        <span className={isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400' : 'text-white'}>
+                          {vehicle.displayName || vehicle.name}
+                        </span>
+                        {isPendingRestart && (
+                          <span className="inline-flex items-center h-5 px-2 text-[10px] leading-none rounded-full bg-orange-900 text-orange-300">Нужен рестарт</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400">{vehicle.name}</div>
+                      {vehicle.tags && vehicle.tags.length > 0 && (
+                        <div className="flex space-x-1 mt-1">
+                          {vehicle.tags.slice(0, 3).map((tag, index) => (
+                            <span key={index} className="px-1 py-0.5 bg-primary-900 text-primary-300 text-xs rounded">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      {/* Информация о файле */}
+                      <div className="flex items-center space-x-2">
+                        <Car className="w-4 h-4 text-primary-400" />
+                        <span className="text-xs text-gray-500">
+                          {(vehicle.size / 1024 / 1024).toFixed(1)}MB
+                        </span>
+                      </div>
+                      
+                      {/* Кнопки управления */}
+                      <div className="flex items-center space-x-1">
+                        {!isDownloaded ? (
+                          <button
+                            onClick={handleDownload}
+                            disabled={isChecking}
+                            className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Скачать автомобиль"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={handleSpawn}
+                              disabled={!isAvailable || isChecking || isPendingRestart}
+                              className="p-2 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={isPendingRestart ? 'Требуется рестарт сервера' : 'Заспавнить автомобиль'}
+                            >
+                              <Play className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={handleReload}
+                              disabled={isChecking}
+                              className="p-2 text-orange-400 hover:text-orange-300 hover:bg-orange-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Перезагрузить автомобиль"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        {isChecking && (
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* Current Vehicle Controls */}
+      {currentVehicle && (
+        <div className="mt-6 p-4 bg-base-800 rounded-lg">
+          <h3 className="text-sm font-medium text-white mb-3">Текущий автомобиль</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-white">{currentVehicle.modelName}</div>
+              <div className="text-xs text-gray-400">ID: {currentVehicle.id}</div>
+            </div>
+            <Button
+              onClick={() => destroyVehicle()}
+              variant="danger"
+              size="sm"
+              className="text-xs"
+            >
+              Удалить
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="mt-6 p-4 bg-base-800 rounded-lg">
+        <div className="text-xs text-gray-400">
+          {isAvailable 
+            ? '🎮 Подключено к ALT:V - автомобили будут заспавнены в игре'
+            : '🌐 Работает в браузере - используется режим демонстрации'
+          }
+        </div>
+      </div>
+
+      {/* Right side panels (tuning + meta editor) in a portal to escape layout */}
+      {panelsVisible && (
+        <Portal>
+        <div className="pointer-events-auto fixed top-16 bottom-4 z-[9999] flex flex-col space-y-3" style={{ left: panelLeft, right: 24 }}>
+          {/* Header over both panels */}
+          <div
+            className="w-[1260px] max-w-[calc(100vw-480px)] rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
+            title="Скрыть/показать панели"
+            onClick={() => {
+              setPanelsVisible(v => {
+                setShowTuning(!v)
+                setShowMeta(!v)
+                return !v
+              })
+            }}
+          >
+            <div className="w-8 h-8 rounded-lg bg-violet-600/30 ring-1 ring-violet-500/40 flex items-center justify-center">
+              <Car className="w-4 h-4 text-violet-200" />
+            </div>
+            <div className="text-sm font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400">
+              {selectedVehicle?.displayName || selectedVehicle?.name || activeModel || 'Автомобиль'}
+            </div>
+          </div>
+          <div className="flex space-x-3 flex-1 overflow-hidden">
+          {/* Tuning sliders panel - only show if vehicle is downloaded */}
+          {showTuning && selectedVehicle && vehicleStatuses.get(selectedVehicle.id) === 'downloaded' && (
+            <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+              <div className="text-sm font-semibold text-white mb-3">Параметры</div>
+              <TuningSliders
+                onChange={(param, value) => updateHandling(param, value)}
+                onXmlPatch={(param, value) => {
+                  const tag = paramToXmlTag[param]
+                  if (!tag || !handlingMetaXml) return
+                  setHandlingMetaXml(prev => updateXmlNumericValue(prev, tag, value))
+                }}
+                disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
+                initialValues={handlingMetaXml}
+                vehicleKey={selectedVehicle.name}
+                currentXml={handlingMetaXml}
+              />
+            </div>
+          )}
+          {/* Handling.meta editor panel */}
+          {showMeta && selectedVehicle && (
+            <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+              <div className="text-sm font-semibold text-white mb-2">handling.meta</div>
+              <HandlingMetaEditor xml={handlingMetaXml} onXmlChange={setHandlingMetaXml} />
+            </div>
+          )}
+          </div>
+        </div>
+        </Portal>
+      )}
+    </div>
+  )
+}
 
 const InteriorPlaceholder = () => (
   <div className="flex-1 p-6">
@@ -47,6 +702,37 @@ interface MenuItem {
 function App() {
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('dashboard')
+  
+  // Логируем информацию о пути при загрузке
+  useEffect(() => {
+    console.log('[App] 🚀 App component mounted')
+    console.log('[App] window.location:', window.location.href)
+    console.log('[App] window.alt exists:', 'alt' in window)
+    if ('alt' in window) {
+      console.log('[App] ✅ Running in Alt:V WebView')
+    } else {
+      console.log('[App] 🌐 Running in browser')
+    }
+    logAppPathInfo()
+  }, [])
+  
+  // Логирование состояния авторизации
+  console.log('🎯 App render - isAuthenticated:', isAuthenticated, 'isLoading:', isLoading, 'user:', user)
+  
+  // ALT:V интеграция
+  const { closePanel, isAvailable: altvAvailable } = useALTV()
+
+  // Обработка нажатий ESC для закрытия панели
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && altvAvailable) {
+        closePanel()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [altvAvailable, closePanel])
 
   // Конфигурация меню
   const menuItems: MenuItem[] = [
@@ -191,8 +877,18 @@ function App() {
 
       {/* Footer */}
       <div className="flex-shrink-0 p-4 border-t border-base-700">
-        <div className="text-xs text-gray-500 text-center">
-          ESC - закрыть панель
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2">
+            <div className={`w-2 h-2 rounded-full ${
+              altvAvailable ? 'bg-green-400' : 'bg-orange-400'
+            }`} />
+            <span className="text-gray-500">
+              {altvAvailable ? 'ALT:V' : 'Browser'}
+            </span>
+          </div>
+          <div className="text-gray-500">
+            {altvAvailable ? 'F10 - toggle | ESC - close' : 'Demo Mode'}
+          </div>
         </div>
       </div>
     </div>

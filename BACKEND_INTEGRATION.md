@@ -856,3 +856,6 @@ func (c *VehicleCache) Set(id string, meta *models.VehicleMetadata) {
 
 Это основные изменения для backend интеграции. Backend готов к работе с ALT:V инструментом! 🚀
 
+
+
+

@@ -18,12 +18,12 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const { status, isConnected, isMock, isChecking } = useBackendStatus()
   
   const [formData, setFormData] = useState<LoginRequest>({
-    username: '',
+    email: '',
     password: '',
   })
   
   const [formErrors, setFormErrors] = useState<{
-    username?: string
+    email?: string
     password?: string
   }>({})
 
@@ -36,18 +36,18 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     }
     setFormErrors({})
     setLoginState('idle')
-  }, [formData.username, formData.password, clearError])
+  }, [formData.email, formData.password, clearError])
 
   // Валидация формы
   const validateForm = (): boolean => {
     const errors: typeof formErrors = {}
 
-    if (!formData.username.trim()) {
-      errors.username = 'Email не может быть пустым'
-    } else if (!formData.username.includes('@')) {
-      errors.username = 'Некорректный формат email'
-    } else if (!formData.username.endsWith('@1win.pro')) {
-      errors.username = 'Email должен быть в формате user@1win.pro'
+    if (!formData.email.trim()) {
+      errors.email = 'Email не может быть пустым'
+    } else if (!formData.email.includes('@')) {
+      errors.email = 'Некорректный формат email'
+    } else if (!formData.email.endsWith('@1win.pro')) {
+      errors.email = 'Email должен быть в формате user@1win.pro'
     }
 
     if (!formData.password.trim()) {
@@ -134,9 +134,9 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             type="email"
             label="Email"
             placeholder="user@1win.pro"
-            value={formData.username}
-            onChange={handleChange('username')}
-            error={formErrors.username}
+            value={formData.email}
+            onChange={handleChange('email')}
+            error={formErrors.email}
             icon={<Mail className="w-4 h-4" />}
             disabled={isLoading}
             autoComplete="email"
