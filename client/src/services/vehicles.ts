@@ -1,7 +1,6 @@
 // Сервис для работы с автомобилями - прямые запросы к backend
 
 import { apiClient } from './auth'
-import { API_CONFIG } from '@/config/api'
 import type { VehicleResource } from '@/types/vehicle'
 
 export interface VehicleListResponse {

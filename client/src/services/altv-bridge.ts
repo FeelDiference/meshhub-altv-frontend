@@ -1,6 +1,6 @@
 // Мост для коммуникации с ALT:V
 
-import type { ALTVBridge, ALTVState, SpawnedVehicle } from '@/types/altv'
+import type { ALTVBridge, ALTVState } from '@/types/altv'
 import type { ALTVEventHandler } from '@/types/altv'
 
 /**
@@ -77,6 +77,19 @@ class ALTVBridgeImpl implements ALTVBridge {
       this.emitToSubscribers('installation:checked', data)
     })
 
+    alt.on('meshhub:vehicle:handling:meta:response', (data: { modelName: string; xml: string; success: boolean }) => {
+      console.log('[ALTVBridge] 📥 Received handling meta response:', data.modelName, data.success)
+      console.log('[ALTVBridge] 📦 XML length:', data?.xml?.length || 0)
+      console.log('[ALTVBridge] 🔍 Data object:', data)
+      if (data.success && data.xml) {
+        console.log('[ALTVBridge] ✅ Emitting to subscribers: meshhub:vehicle:handling:meta:response')
+        this.emitToSubscribers('meshhub:vehicle:handling:meta:response', { modelName: data.modelName, xml: data.xml })
+        console.log('[ALTVBridge] ✅ Event emitted to subscribers')
+      } else {
+        console.warn('[ALTVBridge] ⚠️  Handling meta not valid or failed:', data)
+      }
+    })
+
     alt.on('player:entered:vehicle', (data: { vehicleId: number; modelName: string }) => {
       // обновим текущий автомобиль для состояния
       if (data?.vehicleId && data?.modelName) {
@@ -113,7 +126,7 @@ class ALTVBridgeImpl implements ALTVBridge {
         console.log(`[ALTVBridge] Mock emit: ${eventName}`, data)
         this.handleMockEvent(eventName, data)
       },
-      on: (eventName: string, handler: Function) => {
+      on: (eventName: string, _handler: Function) => {
         console.log(`[ALTVBridge] Mock listener registered: ${eventName}`)
       },
     }

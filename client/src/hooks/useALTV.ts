@@ -16,7 +16,7 @@ export interface UseALTVReturn {
   destroyVehicle: (vehicleId?: number) => void
   updateHandling: (parameter: string, value: number) => void
   resetHandling: () => void
-  requestHandlingMeta: (modelName: string) => void
+  requestHandlingMeta: (modelName: string, category?: 'gtav' | 'local' | 'meshhub') => void
   checkInstallation: (modelName: string) => void
   
   // Действия панели
@@ -34,9 +34,11 @@ export function useALTV(callbacks: {
   onVehicleSpawned?: (data: { vehicleId: number; modelName: string }) => void
   onVehicleDestroyed?: (data: { vehicleId: number }) => void
   onHandlingApplied?: (data: { parameter: string; value: number; success: boolean; error?: string }) => void
+  onHandlingMetaReceived?: (data: { modelName: string; xml: string }) => void
   onInstallationChecked?: (data: { modelName: string; isInstalled: boolean }) => void
   onPlayerEnteredVehicle?: (data: { vehicleId: number; modelName: string }) => void
   onPlayerLeftVehicle?: (data: { vehicleId: number }) => void
+  onLocalVehiclesReceived?: (vehicles: any[]) => void
 } = {}): UseALTVReturn {
   
   // Состояние
@@ -77,9 +79,9 @@ export function useALTV(callbacks: {
     altvBridge.emit('handling:reset', undefined)
   }, [])
 
-  const requestHandlingMeta = useCallback((modelName: string) => {
-    console.log(`[useALTV] Request handling.meta for: ${modelName}`)
-    altvBridge.emit('handling:meta:request', { modelName })
+  const requestHandlingMeta = useCallback((modelName: string, category?: 'gtav' | 'local' | 'meshhub') => {
+    console.log(`[useALTV] Requesting handling.meta for ${modelName} (category: ${category || 'unknown'})`)
+    altvBridge.emit('handling:meta:request', { modelName, vehicleCategory: category })
   }, [])
 
   const checkInstallation = useCallback((modelName: string) => {
@@ -135,9 +137,11 @@ export function useALTV(callbacks: {
 
     // Обработчик входа игрока в автомобиль
     const handlePlayerEnteredVehicle = (data: { vehicleId: number; modelName: string }) => {
-      console.log('[useALTV] Player entered vehicle:', data)
+      console.log('[useALTV] 🚗 Player entered vehicle:', data)
+      console.log('[useALTV] 🔍 Data details:', { vehicleId: data.vehicleId, modelName: data.modelName })
       updateState()
       callbacksRef.current.onPlayerEnteredVehicle?.(data)
+      console.log('[useALTV] ✅ Callback executed for player entered vehicle')
     }
 
     // Обработчик выхода игрока из автомобиля
@@ -147,7 +151,23 @@ export function useALTV(callbacks: {
       callbacksRef.current.onPlayerLeftVehicle?.(data)
     }
 
+    // Обработчик получения handling.meta
+    const handleHandlingMetaReceived = (data: { modelName: string; xml: string }) => {
+      console.log('[useALTV] 🔥 Handling meta received:', data)
+      console.log('[useALTV] 🔍 Data details:', { modelName: data.modelName, xmlLength: data.xml?.length })
+      console.log('[useALTV] 🔍 Callbacks available:', !!callbacksRef.current.onHandlingMetaReceived)
+      callbacksRef.current.onHandlingMetaReceived?.(data)
+      console.log('[useALTV] ✅ Callback executed')
+    }
+
+    // Обработчик получения локальных машин
+    const handleLocalVehiclesReceived = (vehicles: any[]) => {
+      console.log('[useALTV] 🏠 Local vehicles received:', vehicles.length)
+      callbacksRef.current.onLocalVehiclesReceived?.(vehicles)
+    }
+
     // Подписываемся на события
+    console.log('[useALTV] 🔧 Setting up event listeners...')
     altvBridge.on('panel:opened', handlePanelOpened)
     altvBridge.on('panel:closed', handlePanelClosed)
     altvBridge.on('vehicle:spawned', handleVehicleSpawned)
@@ -156,9 +176,9 @@ export function useALTV(callbacks: {
     altvBridge.on('installation:checked', handleInstallationChecked)
     altvBridge.on('player:entered:vehicle', handlePlayerEnteredVehicle)
     altvBridge.on('player:left:vehicle', handlePlayerLeftVehicle)
-    altvBridge.on('handling:meta:response', (data: { modelName: string; xml: string }) => {
-      callbacksRef.current.onHandlingMetaReceived?.(data)
-    })
+    altvBridge.on('meshhub:vehicle:handling:meta:response', handleHandlingMetaReceived)
+    altvBridge.on('meshhub:vehicle:local:list:response', handleLocalVehiclesReceived)
+    console.log('[useALTV] ✅ Event listeners registered')
 
     // Получаем начальное состояние
     updateState()
@@ -171,8 +191,10 @@ export function useALTV(callbacks: {
       altvBridge.off('vehicle:destroyed', handleVehicleDestroyed)
       altvBridge.off('handling:applied', handleHandlingApplied)
       altvBridge.off('installation:checked', handleInstallationChecked)
-      altvBridge.off('player:entered:vehicle', handlePlayerEnteredVehicle)
-      altvBridge.off('player:left:vehicle', handlePlayerLeftVehicle)
+    altvBridge.off('player:entered:vehicle', handlePlayerEnteredVehicle)
+    altvBridge.off('player:left:vehicle', handlePlayerLeftVehicle)
+    altvBridge.off('meshhub:vehicle:handling:meta:response', handleHandlingMetaReceived)
+    altvBridge.off('meshhub:vehicle:local:list:response', handleLocalVehiclesReceived)
     }
   }, [updateState])
 

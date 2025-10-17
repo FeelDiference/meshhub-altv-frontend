@@ -24,7 +24,7 @@ export function useBackendStatus() {
       }
     } catch (error) {
       // В dev режиме при ошибке сети переключаемся на mock
-      if (import.meta.env.DEV) {
+      if (process.env.NODE_ENV === 'development') {
         return 'mock'
       }
       return 'error'

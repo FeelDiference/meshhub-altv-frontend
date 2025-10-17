@@ -14,7 +14,7 @@ export const ALTV_CONFIG: ALTVConfig = {
   },
   
   // Дебаг режим (включен в development)
-  debug: import.meta.env.DEV,
+  debug: process.env.NODE_ENV === 'development',
 }
 
 // Параметры handling для валидации

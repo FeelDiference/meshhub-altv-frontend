@@ -1,7 +1,6 @@
 // Базовый компонент Button
 
 import React, { ButtonHTMLAttributes } from 'react'
-import { motion } from 'framer-motion'
 import { Loader2 } from 'lucide-react'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -39,14 +38,12 @@ export function Button({
   const isDisabled = disabled || loading
 
   return (
-    <motion.button
-      whileHover={{ scale: isDisabled ? 1 : 1.02 }}
-      whileTap={{ scale: isDisabled ? 1 : 0.98 }}
+    <button
       className={`
         ${baseClasses}
         ${variants[variant]}
         ${sizes[size]}
-        ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105 active:scale-95 transition-transform'}
         ${className}
       `}
       disabled={isDisabled}
@@ -63,6 +60,6 @@ export function Button({
       )}
       
       {children}
-    </motion.button>
+    </button>
   )
 }

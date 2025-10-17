@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
@@ -16,6 +16,14 @@ import type { VehicleResource } from '@/types/vehicle'
 import { logAppPathInfo } from '@/utils/pathDetection'
 import { downloadVehicleWithStatus, reloadVehicle, type VehicleStatus } from '@/services/vehicleManager'
 import { getAccessToken } from '@/services/auth'
+import { getGTAVVehicles, getGTAVCategories, type GTAVVehicle } from '@/data/gtav-vehicles-with-categories'
+
+// Общий тип для всех машин
+type AnyVehicle = VehicleResource | (GTAVVehicle & { 
+  isGTAV: true
+  id: string
+  modelName: string
+})
 
 const Dashboard = () => (
   <div className="flex-1 p-6">
@@ -32,23 +40,161 @@ const VehiclesPage = () => {
     onVehicleSpawned: (data) => {
       toast.success(`${data.modelName} заспавнен`)
     },
-    onVehicleDestroyed: (data) => {
+    onVehicleDestroyed: () => {
       toast('Автомобиль удалён', { icon: '🗑️' })
+    },
+    onPlayerEnteredVehicle: (data) => {
+      console.log('[VehiclesPage] 🚗 Player entered vehicle:', data.modelName)
+      console.log('[VehiclesPage] 🔍 Searching for vehicle in lists...')
+      
+      // Ищем машину в списках (GTAV или кастомные)
+      let vehicle: AnyVehicle | null = null
+      
+      // Сначала ищем в GTAV
+      console.log('[VehiclesPage] 🔍 Searching in GTAV vehicles:', gtavVehicles.length)
+      const gtavVehicle = gtavVehicles.find(v => v.name.toLowerCase() === data.modelName.toLowerCase())
+      if (gtavVehicle) {
+        console.log('[VehiclesPage] ✅ Found in GTAV list:', gtavVehicle.name)
+        vehicle = {
+          ...gtavVehicle,
+          id: gtavVehicle.name,
+          modelName: gtavVehicle.name,
+          isGTAV: true as const
+        }
+      } else {
+        console.log('[VehiclesPage] 🔍 Not found in GTAV, searching in custom vehicles:', vehicles.length)
+        // Ищем в кастомных
+        vehicle = vehicles.find(v => v.name.toLowerCase() === data.modelName.toLowerCase()) || null
+        if (vehicle) {
+          console.log('[VehiclesPage] ✅ Found in custom vehicles:', vehicle.name)
+        } else {
+          console.log('[VehiclesPage] ❌ Not found in custom vehicles')
+        }
+      }
+      
+      if (vehicle) {
+        console.log('[VehiclesPage] ✅ Found vehicle, setting as selected:', vehicle.name)
+        setSelectedVehicle(vehicle)
+        setShowTuning(true)
+        setShowMeta(true)
+        setShowActions(true)
+        setPanelsVisible(true)
+        // Не помечаем как ручное сворачивание при автоматическом открытии при входе в автомобиль
+      } else {
+        console.warn('[VehiclesPage] ❌ Vehicle not found in lists:', data.modelName)
+      }
+    },
+    onHandlingMetaReceived: (data) => {
+      console.log('[VehiclesPage] Received handling meta from server:', data.modelName)
+      setHandlingMetaXml(data.xml)
+      currentXmlVehicleName.current = data.modelName
+      vehicleXmlCache.current.set(data.modelName, data.xml)
+      toast.success(`Handling загружен для ${data.modelName}`)
+    },
+    onLocalVehiclesReceived: (vehicles) => {
+      console.log('[VehiclesPage] Local vehicles received:', vehicles.length)
+      setLocalVehicles(vehicles)
     }
   })
   // UI state for side panels
-  const [selectedVehicle, setSelectedVehicle] = useState<VehicleResource | null>(null)
+  const [selectedVehicle, setSelectedVehicle] = useState<AnyVehicle | null>(null)
   const [handlingMetaXml, setHandlingMetaXml] = useState<string>('')
   const [showTuning, setShowTuning] = useState(false)
   const [showMeta, setShowMeta] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [focusMode, setFocusMode] = useState<'off' | 'tuning' | 'actions'>('off') // Режим фокуса: выкл / на параметры / на действия
+  const [userManuallyCollapsed, setUserManuallyCollapsed] = useState(false) // Отслеживание ручного сворачивания панелей
   const panelLeft = 420 // сдвиг от левого края (примерно ширина меню + отступ)
-  const [activeModel, setActiveModel] = useState<string>('')
+  const [activeModel] = useState<string>('')
   const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
   const [pendingModelToSelect, setPendingModelToSelect] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [activeTab, setActiveTab] = useState<'hub' | 'gtav' | 'local'>('hub')
+  const [selectedCategory, setSelectedCategory] = useState<string>('All')
   
+  // GTAV машины загружаются локально
+  const [gtavVehicles] = useState<GTAVVehicle[]>(() => getGTAVVehicles())
+  const [gtavCategories] = useState<string[]>(() => ['All', ...getGTAVCategories()])
+  
+  // Local машины пользователя
+  const [localVehicles, setLocalVehicles] = useState<AnyVehicle[]>([])
+  
+  // Функция загрузки локальных машин
+  const loadLocalVehicles = useCallback(async () => {
+    if (activeTab !== 'local') return
+    
+    try {
+      console.log('[VehiclesPage] Loading local vehicles...')
+      
+      // Запрашиваем локальные машины с сервера
+      if (typeof window !== 'undefined' && 'alt' in window) {
+        ;(window as any).alt.emit('meshhub:vehicle:local:list:request')
+      }
+    } catch (error) {
+      console.error('[VehiclesPage] Error loading local vehicles:', error)
+    }
+  }, [activeTab])
+
+  // Функция определения, нужно ли показывать XML редактор
+  const shouldShowXmlEditor = useCallback((vehicle: AnyVehicle): boolean => {
+    // Для GTAV машин - всегда показываем XML (есть доступ к handling.meta)
+    if ('isGTAV' in vehicle && vehicle.isGTAV) {
+      return true
+    }
+    
+    // Для HUB машин - всегда показываем XML
+    if (activeTab === 'hub') {
+      return true
+    }
+    
+    // Для LOCAL машин - показываем только для streaming ресурсов
+    if (activeTab === 'local' && vehicle) {
+      // Если у машины есть флаг isStreaming, используем его
+      if ('isStreaming' in vehicle) {
+        return vehicle.isStreaming === true
+      }
+      // По умолчанию для LOCAL машин считаем streaming
+      return true
+    }
+    
+    // По умолчанию показываем
+    return true
+  }, [activeTab])
+  
+  // Принудительно синхронизируем GTAV машины с клиентом при инициализации
+  useEffect(() => {
+    console.log('[VehiclesPage] 🔍 Checking Alt:V availability...')
+    console.log('[VehiclesPage] typeof window:', typeof window)
+    console.log('[VehiclesPage] alt in window:', 'alt' in window)
+    console.log('[VehiclesPage] gtavVehicles.length:', gtavVehicles.length)
+    
+    if (typeof window !== 'undefined' && 'alt' in window && gtavVehicles.length > 0) {
+      try {
+        const gtavList = gtavVehicles.map(v => ({
+          name: v.name,
+          modelName: v.name,
+          displayName: v.displayName,
+          category: 'gtav'
+        }))
+        
+        console.log('[VehiclesPage] 🚗 Sending GTAV sync to Alt:V...')
+        ;(window as any).alt.emit('vehicles:list:sync', gtavList)
+        console.log('[VehiclesPage] ✅ Initial GTAV sync sent:', gtavList.length, 'vehicles')
+      } catch (e) {
+        console.warn('[VehiclesPage] Failed initial GTAV sync:', e)
+      }
+    } else {
+      console.warn('[VehiclesPage] ⚠️  Cannot sync GTAV vehicles - not in Alt:V or no vehicles')
+    }
+  }, [gtavVehicles])
+
+  // Загружаем локальные машины при переключении на Local вкладку
+  useEffect(() => {
+    if (activeTab === 'local') {
+      loadLocalVehicles()
+    }
+  }, [activeTab, loadLocalVehicles])
+
   // Хранилище изменённых XML для каждой машины (ключ = vehicle.name)
   const vehicleXmlCache = React.useRef<Map<string, string>>(new Map())
   // Отслеживаем какой машине принадлежит текущий XML
@@ -68,6 +214,9 @@ const VehiclesPage = () => {
     setShowTuning(true)
     setShowMeta(true)
     setShowActions(true)
+    setPanelsVisible(true)
+    // Сбрасываем флаг ручного сворачивания при смене автомобиля
+    setUserManuallyCollapsed(false)
     
     // Проверяем, есть ли уже изменённый XML в кэше
     const cachedXml = vehicleXmlCache.current.get(selectedVehicle.name)
@@ -79,6 +228,19 @@ const VehiclesPage = () => {
       return
     }
     
+    // Определяем категорию машины
+    const vehicleCategory: 'gtav' | 'local' | 'meshhub' = 
+      'isGTAV' in selectedVehicle && selectedVehicle.isGTAV ? 'gtav' :
+      'category' in selectedVehicle && (selectedVehicle.category === 'local' || selectedVehicle.category === 'meshhub' || selectedVehicle.category === 'gtav') ? selectedVehicle.category :
+      'meshhub'
+
+    // Для GTAV машин - сразу запрашиваем через Alt:V (локальный индекс)
+    if (vehicleCategory === 'gtav' && isAvailable) {
+      console.log('[VehiclesPage] Requesting GTAV handling for', selectedVehicle.name)
+      requestHandlingMeta(selectedVehicle.name, 'gtav')
+      return
+    }
+
     // Если нет в кэше — загружаем реальный handling.meta с бэка
     console.log('[VehiclesPage] Fetching fresh XML for', selectedVehicle.name)
     fetchHandlingMeta(selectedVehicle.name)
@@ -92,65 +254,14 @@ const VehiclesPage = () => {
       .catch(() => {
         // fallback через ALT (если будет предоставлен) или оставить пусто
         if (typeof window !== 'undefined' && 'alt' in window) {
-          requestHandlingMeta(selectedVehicle.modelName || selectedVehicle.name)
+          requestHandlingMeta(selectedVehicle.modelName || selectedVehicle.name, vehicleCategory)
         }
       })
-  }, [selectedVehicle, requestHandlingMeta])
+  }, [selectedVehicle, requestHandlingMeta, isAvailable])
 
   // Listen for handling.meta response
   useEffect(() => {
     if (!(typeof window !== 'undefined' && 'alt' in window)) return
-    
-    // Авто-открытие/закрытие при посадке/выходе
-    const onEnter = (data: any) => {
-      console.log('[VehiclesPage] Player entered vehicle:', data)
-      const mdl = data?.modelName || currentVehicle?.modelName
-      if (!mdl) return
-      
-      setActiveModel(mdl)
-      
-      // Используем callback для доступа к свежему vehicles
-      setVehicles(currentVehicles => {
-        const found = currentVehicles.find(x => (x.modelName || x.name) === mdl)
-        if (found) {
-          console.log('[VehiclesPage] Found vehicle in list:', found.name)
-          setSelectedVehicle(found)
-          setPanelsVisible(true)
-          setShowTuning(true)
-          setShowMeta(true)
-          
-          // Проверяем кэш перед загрузкой
-          const cachedXml = vehicleXmlCache.current.get(found.name)
-          if (cachedXml) {
-            console.log('[VehiclesPage] onEnter: Loading XML from cache for', found.name)
-            setHandlingMetaXml(cachedXml)
-            currentXmlVehicleName.current = found.name
-          } else {
-            // Загружаем handling.meta для этой машины
-            fetchHandlingMeta(found.name)
-              .then(xml => {
-                console.log('[VehiclesPage] onEnter: Loaded handling.meta for', found.name)
-                setHandlingMetaXml(xml)
-                currentXmlVehicleName.current = found.name
-                vehicleXmlCache.current.set(found.name, xml)
-              })
-              .catch((err) => {
-                console.warn('[VehiclesPage] Failed to fetch handling.meta:', err)
-              })
-          }
-        } else {
-          console.warn('[VehiclesPage] Vehicle not found in list:', mdl)
-          setPendingModelToSelect(mdl)
-        }
-        return currentVehicles // Возвращаем без изменений
-      })
-    }
-    
-    const onLeft = () => {
-      setShowTuning(false)
-      setShowMeta(false)
-      setPanelsVisible(false)
-    }
     
     const onMeta = (data: { modelName: string; xml: string }) => {
       console.log('[VehiclesPage] onMeta: Received XML for', data.modelName)
@@ -165,19 +276,31 @@ const VehiclesPage = () => {
       })
     }
     
-    const onPanelOpened = () => {}
-    const onPanelClosed = () => {}
+    const onPanelOpened = () => {
+      console.log('[VehiclesPage] Panel opened via F10 - checking auto-expand logic')
+      // Если пользователь не сворачивал панели вручную, автоматически разворачиваем все блоки
+      if (!userManuallyCollapsed) {
+        console.log('[VehiclesPage] Auto-expanding panels (user never manually collapsed)')
+        setShowTuning(true)
+        setShowMeta(true)
+        setShowActions(true)
+        setPanelsVisible(true)
+      } else {
+        console.log('[VehiclesPage] User manually collapsed panels before - not auto-expanding')
+      }
+    }
+    const onPanelClosed = () => {
+      console.log('[VehiclesPage] Panel closed - resetting manual collapse flag')
+      // Сбрасываем флаг ручного сворачивания при закрытии панели
+      setUserManuallyCollapsed(false)
+    }
     
     ;(window as any).alt.on('handling:meta:response', onMeta)
-    ;(window as any).alt.on('player:entered:vehicle', onEnter)
-    ;(window as any).alt.on('player:left:vehicle', onLeft)
     ;(window as any).alt.on('altv:panel:opened', onPanelOpened)
     ;(window as any).alt.on('altv:panel:closed', onPanelClosed)
     
     return () => {
       (window as any).alt.off?.('handling:meta:response', onMeta)
-      ;(window as any).alt.off?.('player:entered:vehicle', onEnter)
-      ;(window as any).alt.off?.('player:left:vehicle', onLeft)
       ;(window as any).alt.off?.('altv:panel:opened', onPanelOpened)
       ;(window as any).alt.off?.('altv:panel:closed', onPanelClosed)
     }
@@ -199,8 +322,6 @@ const VehiclesPage = () => {
         setError(null)
         const vehiclesList = await getVehicles()
         setVehicles(vehiclesList)
-        try { (window as any).alt?.emit?.('vehicles:list:sync', vehiclesList) } catch {}
-        try { (window as any).alt?.emit?.('vehicles:list:sync', vehiclesList) } catch {}
         
         // Запросить у сервера список уже установленных ресурсов (Alt:V)
         if (typeof window !== 'undefined' && 'alt' in window) {
@@ -219,6 +340,36 @@ const VehiclesPage = () => {
         }
         setVehicleStatuses(statusMap)
         
+        // Синхронизируем ВСЕ машины (кастомные + GTAV) с клиентом для автодетекта
+        if (typeof window !== 'undefined' && 'alt' in window) {
+          try {
+            // Объединяем кастомные машины с GTAV
+            const gtavList = gtavVehicles.map(v => ({
+              name: v.name,
+              modelName: v.name,
+              displayName: v.displayName,
+              category: 'gtav'
+            }))
+            
+            const allVehicles = [...vehiclesList, ...gtavList]
+            console.log('[VehiclesPage] 🚗 Syncing vehicles with client:')
+            console.log('[VehiclesPage] 📊 Custom vehicles:', vehiclesList.length)
+            console.log('[VehiclesPage] 📊 GTAV vehicles:', gtavList.length)
+            console.log('[VehiclesPage] 📊 Total vehicles:', allVehicles.length)
+            console.log('[VehiclesPage] 📋 First 5 GTAV vehicles:', gtavList.slice(0, 5).map(v => v.name))
+            
+            // ВАЖНО: Отправляем GTAV машины даже если кастомных нет
+            if (gtavList.length > 0) {
+              ;(window as any).alt.emit('vehicles:list:sync', allVehicles)
+              console.log('[VehiclesPage] ✅ Synced all vehicles with client:', allVehicles.length)
+            } else {
+              console.warn('[VehiclesPage] ⚠️  No GTAV vehicles to sync!')
+            }
+          } catch (e) {
+            console.warn('[VehiclesPage] Failed to sync vehicles:', e)
+          }
+        }
+        
       } catch (err: any) {
         setError(err.message)
         console.error('Ошибка загрузки автомобилей:', err)
@@ -229,7 +380,7 @@ const VehiclesPage = () => {
     }
     
     loadVehicles()
-  }, [])
+  }, [gtavVehicles])
 
   // Дожимаем выбор машины, если событие пришло раньше, чем загрузился список
   useEffect(() => {
@@ -302,9 +453,8 @@ const VehiclesPage = () => {
         
         
         
-        for (const installedName of installedNames) {
-          const found = currentVehicles.find(v => v.name === installedName)
-        }
+        // Обновляем статусы установленных машин
+        // Логика обновления статусов будет в setVehicleStatuses ниже
         
         setVehicleStatuses(prev => {
           const m = new Map(prev)
@@ -333,29 +483,80 @@ const VehiclesPage = () => {
     return () => (window as any).alt.off?.('vehicle:installed:list:response', onInstalled)
   }, [])
 
-  // Фильтрация машин по поиску
-  const filteredVehicles = vehicles
-    .filter(v => {
-      if (!searchQuery.trim()) return true
-      const q = searchQuery.toLowerCase()
-      return (
-        v.name?.toLowerCase().includes(q) ||
-        v.displayName?.toLowerCase().includes(q) ||
-        v.modelName?.toLowerCase().includes(q) ||
-        v.manufacturer?.toLowerCase().includes(q)
-      )
-    })
-    .sort((a, b) => {
-      // Установленные машины сверху
-      const aInstalled = vehicleStatuses.get(a.id) === 'downloaded'
-      const bInstalled = vehicleStatuses.get(b.id) === 'downloaded'
-      
-      if (aInstalled && !bInstalled) return -1
-      if (!aInstalled && bInstalled) return 1
-      
-      // Если обе установлены или обе не установлены - по имени
-      return (a.displayName || a.name).localeCompare(b.displayName || b.name)
-    })
+  // Обработчик получения локальных машин
+  useEffect(() => {
+    const onLocalVehicles = (vehicles: any[]) => {
+      console.log('[VehiclesPage] Local vehicles received from server:', vehicles.length)
+      setLocalVehicles(vehicles)
+    }
+    
+    if ('alt' in window) {
+      ;(window as any).alt.on('meshhub:vehicle:local:list:response', onLocalVehicles)
+      return () => (window as any).alt.off?.('meshhub:vehicle:local:list:response', onLocalVehicles)
+    }
+  }, [])
+
+  // Получаем список машин в зависимости от активной вкладки
+  const getCurrentVehicles = (): AnyVehicle[] => {
+    switch (activeTab) {
+      case 'hub':
+        return vehicles
+      case 'gtav':
+        const filteredGTAV = selectedCategory === 'All' 
+          ? gtavVehicles 
+          : gtavVehicles.filter(v => v.category === selectedCategory)
+        
+        return filteredGTAV.map(v => ({
+          ...v,
+          id: v.name,
+          modelName: v.name,
+          isGTAV: true as const
+        }))
+      case 'local':
+        return localVehicles
+      default:
+        return vehicles
+    }
+  }
+
+         // Фильтрация машин по поиску
+         const currentVehicles = getCurrentVehicles()
+         const filteredVehicles = currentVehicles
+           .filter(v => {
+             if (!searchQuery.trim()) return true
+             const q = searchQuery.toLowerCase()
+             return (
+               v.name?.toLowerCase().includes(q) ||
+               v.displayName?.toLowerCase().includes(q) ||
+               v.modelName?.toLowerCase().includes(q)
+             )
+           })
+           .sort((a, b) => {
+             // Для HUB машин - установленные сверху
+             if (activeTab === 'hub') {
+               const aInstalled = vehicleStatuses.get(a.id) === 'downloaded'
+               const bInstalled = vehicleStatuses.get(b.id) === 'downloaded'
+               
+               if (aInstalled && !bInstalled) return -1
+               if (!aInstalled && bInstalled) return 1
+             }
+             
+             // Сортировка по имени
+             return (a.displayName || a.name).localeCompare(b.displayName || b.name)
+           })
+
+         // Проверяем, есть ли предложение заспавнить несуществующую машину
+         const shouldShowSpawnSuggestion = searchQuery.trim() && 
+           filteredVehicles.length === 0 && 
+           searchQuery.length >= 3
+
+         const handleSpawnSuggestion = () => {
+           if (!searchQuery.trim()) return
+           
+           console.log(`[VehiclesPage] Spawning suggested vehicle: ${searchQuery}`)
+           spawnVehicle(searchQuery)
+           toast.success(`Заспавнена машина: ${searchQuery}`)
+         }
 
   return (
     <div className="flex-1 p-6 relative">
@@ -374,6 +575,60 @@ const VehiclesPage = () => {
           )}
         </div>
         
+        {/* Кнопки категорий */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <button
+            className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+              activeTab === 'hub' 
+                ? 'bg-primary-600/50 text-white border border-primary-500/30' 
+                : 'bg-base-800/50 text-gray-300 hover:bg-base-700/50 border border-base-700/30 hover:border-base-600/50'
+            }`}
+            onClick={() => setActiveTab('hub')}
+          >
+            <Cloud className="w-4 h-4" />
+            <span>HUB</span>
+          </button>
+          <button
+            className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+              activeTab === 'gtav' 
+                ? 'bg-primary-600/50 text-white border border-primary-500/30' 
+                : 'bg-base-800/50 text-gray-300 hover:bg-base-700/50 border border-base-700/30 hover:border-base-600/50'
+            }`}
+            onClick={() => setActiveTab('gtav')}
+          >
+            <Gamepad2 className="w-4 h-4" />
+            <span>GTAV</span>
+          </button>
+          <button
+            className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+              activeTab === 'local' 
+                ? 'bg-primary-600/50 text-white border border-primary-500/30' 
+                : 'bg-base-800/50 text-gray-300 hover:bg-base-700/50 border border-base-700/30 hover:border-base-600/50'
+            }`}
+            onClick={() => setActiveTab('local')}
+          >
+            <HardDrive className="w-4 h-4" />
+            <span>Local</span>
+          </button>
+        </div>
+
+        {/* Селектор категорий для GTAV */}
+        {activeTab === 'gtav' && (
+          <div className="mb-4">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full py-2.5 px-4 bg-base-800/50 border border-base-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+            >
+              {gtavCategories.map(category => (
+                <option key={category} value={category}>
+                  {category} ({category === 'All' ? gtavVehicles.length : gtavVehicles.filter(v => v.category === category).length})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Поиск */}
         <div className="space-y-2">
           <div className="relative">
@@ -396,11 +651,41 @@ const VehiclesPage = () => {
               </button>
             )}
           </div>
-          {searchQuery && (
-            <div className="text-xs text-gray-500">
-              Найдено: <span className="text-primary-400 font-medium">{filteredVehicles.length}</span> из {vehicles.length}
-            </div>
-          )}
+                 {searchQuery && (
+                   <div className="text-xs text-gray-500">
+                     Найдено: <span className="text-primary-400 font-medium">{filteredVehicles.length}</span> из {currentVehicles.length}
+                   </div>
+                 )}
+                 
+                 {/* Предложение заспавнить несуществующую машину */}
+                 {shouldShowSpawnSuggestion && (
+                   <div className="mt-3 p-4 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center space-x-3">
+                         <div className="w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center">
+                           <Car className="w-4 h-4 text-blue-400" />
+                         </div>
+                         <div>
+                           <p className="text-blue-300 text-sm font-medium">
+                             Машина "{searchQuery}" не найдена в списке
+                           </p>
+                           <p className="text-blue-400/70 text-xs">
+                             Хотите заспавнить её напрямую?
+                           </p>
+                         </div>
+                       </div>
+                       <Button
+                         onClick={handleSpawnSuggestion}
+                         variant="primary"
+                         size="sm"
+                         className="flex items-center space-x-2"
+                       >
+                         <Play className="w-4 h-4" />
+                         <span>Заспавнить</span>
+                       </Button>
+                     </div>
+                   </div>
+                 )}
         </div>
       </div>
 
@@ -435,6 +720,7 @@ const VehiclesPage = () => {
               const isPendingRestart = pendingRestartIds.has(vehicle.id)
               
               const handleDownload = async () => {
+                if ('isGTAV' in vehicle && vehicle.isGTAV) return // GTAV машины не скачиваются
                 try {
                   setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'checking')))
                   const isAltV = typeof window !== 'undefined' && 'alt' in window
@@ -456,7 +742,7 @@ const VehiclesPage = () => {
                     console.log('[Download] Событие отправлено, ожидаем ответ от сервера...')
                   } else {
                     console.log('[Download] Браузерный режим - скачивание через blob')
-                    await downloadVehicleWithStatus(vehicle)
+                    await downloadVehicleWithStatus(vehicle as VehicleResource)
                   }
                 } catch (error) {
                   console.error('Ошибка скачивания:', error)
@@ -466,9 +752,10 @@ const VehiclesPage = () => {
               }
               
               const handleReload = async () => {
+                if ('isGTAV' in vehicle && vehicle.isGTAV) return // GTAV машины не перезагружаются
                 try {
                   setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'checking')))
-                  await reloadVehicle(vehicle)
+                  await reloadVehicle(vehicle as VehicleResource)
                   setVehicleStatuses(prev => new Map(prev.set(vehicle.id, 'downloaded')))
                   setPendingRestartIds(prev => { const next = new Set(prev); next.add(vehicle.id); return next })
                 } catch (error) {
@@ -521,9 +808,9 @@ const VehiclesPage = () => {
                         )}
                       </div>
                       <div className="text-xs text-gray-400">{vehicle.name}</div>
-                      {vehicle.tags && vehicle.tags.length > 0 && (
+                      {!('isGTAV' in vehicle && vehicle.isGTAV) && 'tags' in vehicle && vehicle.tags && vehicle.tags.length > 0 && (
                         <div className="flex space-x-1 mt-1">
-                          {vehicle.tags.slice(0, 3).map((tag, index) => (
+                          {vehicle.tags.slice(0, 3).map((tag: string, index: number) => (
                             <span key={index} className="px-1 py-0.5 bg-primary-900 text-primary-300 text-xs rounded">
                               {tag}
                             </span>
@@ -537,13 +824,24 @@ const VehiclesPage = () => {
                       <div className="flex items-center space-x-2">
                         <Car className="w-4 h-4 text-primary-400" />
                         <span className="text-xs text-gray-500">
-                          {(vehicle.size / 1024 / 1024).toFixed(1)}MB
+                          {'isGTAV' in vehicle && vehicle.isGTAV ? 'GTA V' : `size` in vehicle ? `${(vehicle.size / 1024 / 1024).toFixed(1)}MB` : 'N/A'}
                         </span>
                       </div>
                       
                       {/* Кнопки управления */}
                       <div className="flex items-center space-x-1">
-                        {!isDownloaded ? (
+                        {'isGTAV' in vehicle && vehicle.isGTAV ? (
+                          // Для GTAV машин - только спавн
+                          <button
+                            onClick={handleSpawn}
+                            disabled={!isAvailable}
+                            className="p-2 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Заспавнить GTA V автомобиль"
+                          >
+                            <Play className="w-4 h-4" />
+                          </button>
+                        ) : !isDownloaded ? (
+                          // Для HUB машин - скачивание
                           <button
                             onClick={handleDownload}
                             disabled={isChecking}
@@ -553,6 +851,7 @@ const VehiclesPage = () => {
                             <Download className="w-4 h-4" />
                           </button>
                         ) : (
+                          // Для установленных HUB машин - спавн и перезагрузка
                           <>
                             <button
                               onClick={handleSpawn}
@@ -633,10 +932,16 @@ const VehiclesPage = () => {
               title="Скрыть/показать панели"
               onClick={() => {
                 setPanelsVisible(v => {
-                  setShowTuning(!v)
-                  setShowMeta(!v)
-                  setShowActions(!v)
-                  return !v
+                  const newVisible = !v
+                  if (!newVisible) {
+                    // Пользователь сворачивает панели вручную
+                    setUserManuallyCollapsed(true)
+                    console.log('[VehiclesPage] User manually collapsed panels')
+                  }
+                  setShowTuning(newVisible)
+                  setShowMeta(newVisible)
+                  setShowActions(newVisible)
+                  return newVisible
                 })
               }}
             >
@@ -660,12 +965,24 @@ const VehiclesPage = () => {
             console.log('  - shouldShow:', (focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && vehicleStatus === 'downloaded')
             return null
           })()}
-          {(focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && vehicleStatuses.get(selectedVehicle.id) === 'downloaded' && (
+          {(focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && (
+            vehicleStatuses.get(selectedVehicle.id) === 'downloaded' || 
+            ('isGTAV' in selectedVehicle && selectedVehicle.isGTAV)
+          ) && (
             <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-3">Параметры</div>
               <TuningSliders
                 onChange={(param, value) => updateHandling(param, value)}
-                onReset={() => resetHandling()}
+                onReset={() => {
+                  // Для GTAV машин - перезагружаем оригинальный handling из локального индекса
+                  if (selectedVehicle && 'isGTAV' in selectedVehicle && selectedVehicle.isGTAV) {
+                    console.log('[VehiclesPage] Resetting GTAV vehicle - reloading original handling')
+                    requestHandlingMeta(selectedVehicle.name, 'gtav')
+                  } else {
+                    // Для кастомных машин - обычный сброс
+                    resetHandling()
+                  }
+                }}
                 onXmlPatch={(param, value) => {
                   const tag = paramToXmlTag[param]
                   if (!tag || !handlingMetaXml) return
@@ -680,8 +997,8 @@ const VehiclesPage = () => {
               />
             </div>
           )}
-          {/* Handling.meta editor panel - скрыть всегда в фокусе */}
-          {focusMode === 'off' && showMeta && selectedVehicle && (
+          {/* Handling.meta editor panel */}
+          {focusMode === 'off' && showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle) && (
             <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-2">handling.meta</div>
               <HandlingMetaEditor xml={handlingMetaXml} onXmlChange={setHandlingMetaXml} />
@@ -754,6 +1071,50 @@ function App() {
       console.log('[App] 🌐 Running in browser')
     }
     logAppPathInfo()
+    
+    // Тестовое событие для проверки связи
+    if ('alt' in window) {
+      console.log('[App] 🧪 Sending test event to Alt:V...')
+      ;(window as any).alt.emit('test:frontend:loaded', { message: 'Frontend is working!' })
+      console.log('[App] ✅ Test event sent')
+    }
+    
+    // Тест подписки на события
+    if ('alt' in window) {
+      console.log('[App] 🔧 Testing event subscription...')
+      const testHandler = (data: any) => {
+        console.log('[App] 🧪 Test event received:', data)
+      }
+      ;(window as any).alt.on('test:connection', testHandler)
+      console.log('[App] ✅ Test event handler registered')
+    }
+    
+    // Тест подписки на player:entered:vehicle
+    if ('alt' in window) {
+      console.log('[App] 🔧 Testing player:entered:vehicle subscription...')
+      const playerEnteredHandler = (data: any) => {
+        console.log('[App] 🚗 Player entered vehicle event received:', data)
+        console.log('[App] 🔍 Data details:', { vehicleId: data.vehicleId, modelName: data.modelName })
+        
+        // Автоматически открываем панель тюнинга для GTAV машин
+        if (data.modelName) {
+          console.log('[App] 🎯 Auto-opening tuning panel for:', data.modelName)
+          // Здесь нужно добавить логику открытия панели тюнинга
+        }
+      }
+      ;(window as any).alt.on('player:entered:vehicle', playerEnteredHandler)
+      console.log('[App] ✅ Player entered vehicle handler registered')
+    }
+    
+    // Тест подписки на handling:meta:response
+    if ('alt' in window) {
+      console.log('[App] 🔧 Testing handling:meta:response subscription...')
+      const handlingMetaHandler = (data: any) => {
+        console.log('[App] 📋 Handling meta response received:', data)
+      }
+      ;(window as any).alt.on('handling:meta:response', handlingMetaHandler)
+      console.log('[App] ✅ Handling meta response handler registered')
+    }
   }, [])
   
   // Логирование состояния авторизации

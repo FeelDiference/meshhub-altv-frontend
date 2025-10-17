@@ -1,12 +1,29 @@
 // Типы для ALT:V интеграции
 
+// Тип для автомобилей ALT:V
+export interface ALTVVehicle {
+  name: string
+  displayName: string
+  category: 'gta' | 'local' | 'meshhub'
+  hash: string
+  isLocal?: boolean
+  isMeshHub?: boolean
+  // Дополнительные свойства для совместимости с UI
+  id?: string
+  modelName?: string
+  size?: number
+  tags?: string[]
+  isStreaming?: boolean
+}
+
 // События WebView → Client
 export interface WebViewToClientEvents {
   'vehicle:spawn': { modelName: string }
   'vehicle:destroy': { vehicleId: number }
   'installation:check': { modelName: string }
   'handling:update': { parameter: string; value: number }
-  'handling:meta:request': { modelName: string }
+  'handling:meta:request': { modelName: string; vehicleCategory?: 'gtav' | 'local' | 'meshhub' }
+  'handling:reset': void
   'panel:close': void
 }
 
@@ -21,6 +38,8 @@ export interface ClientToWebViewEvents {
   'player:entered:vehicle': { vehicleId: number; modelName: string }
   'player:left:vehicle': { vehicleId: number }
   'handling:meta:response': { modelName: string; xml: string }
+  'meshhub:vehicle:handling:meta:response': { modelName: string; xml: string }
+  'meshhub:vehicle:local:list:response': ALTVVehicle[]
 }
 
 // События Server → Client

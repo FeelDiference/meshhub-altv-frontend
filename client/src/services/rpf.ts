@@ -10,7 +10,7 @@ function authHeaders() {
 export async function findHandlingMetaPath(vehicleName: string): Promise<string | null> {
   const archivePath = `dlcpacks/vehicles/${vehicleName}/dlc.rpf`
   const url = `${BACKEND_URL}/api/rpf/files/find-by-name?name=handling.meta&archive_path=${encodeURIComponent(archivePath)}`
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...authHeaders() } })
+  const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...authHeaders() } as HeadersInit })
   if (!res.ok) throw new Error(`find-by-name failed: ${res.status}`)
   const data = await res.json()
   const file = data?.files?.[0]
@@ -29,7 +29,7 @@ export async function fetchHandlingMeta(vehicleName: string): Promise<string> {
     archive_path: archivePath,
   })
   const url = `${BACKEND_URL}/api/rpf/files/rpf-content?${params.toString()}`
-  const res = await fetch(url, { headers: { ...authHeaders() } })
+  const res = await fetch(url, { headers: { ...authHeaders() } as HeadersInit })
   if (!res.ok) throw new Error(`rpf-content failed: ${res.status}`)
   const data = await res.json()
   return data?.content || ''

@@ -1,5 +1,3 @@
-import React from 'react'
-
 export function HandlingMetaEditor({ xml, onXmlChange }: { xml: string; onXmlChange: (v: string) => void }) {
   return (
     <textarea

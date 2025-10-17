@@ -2,7 +2,7 @@
 
 import React, { useState, FormEvent, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LogIn, Mail, Lock, AlertCircle, Wifi, WifiOff, Loader2 } from 'lucide-react'
+import { LogIn, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react'
 import { Input } from '@/components/common/Input'
 import { Button } from '@/components/common/Button'
 import { useAuth } from '@/hooks/useAuth'
