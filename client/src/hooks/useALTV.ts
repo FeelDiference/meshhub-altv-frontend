@@ -15,6 +15,7 @@ export interface UseALTVReturn {
   spawnVehicle: (modelName: string) => void
   destroyVehicle: (vehicleId?: number) => void
   updateHandling: (parameter: string, value: number) => void
+  resetHandling: () => void
   requestHandlingMeta: (modelName: string) => void
   checkInstallation: (modelName: string) => void
   
@@ -69,6 +70,11 @@ export function useALTV(callbacks: {
   const updateHandling = useCallback((parameter: string, value: number) => {
     console.log(`[useALTV] Updating handling: ${parameter} = ${value}`)
     altvBridge.emit('handling:update', { parameter, value })
+  }, [])
+
+  const resetHandling = useCallback(() => {
+    console.log(`[useALTV] Resetting all handling to defaults`)
+    altvBridge.emit('handling:reset', undefined)
   }, [])
 
   const requestHandlingMeta = useCallback((modelName: string) => {
@@ -181,6 +187,7 @@ export function useALTV(callbacks: {
     spawnVehicle,
     destroyVehicle,
     updateHandling,
+    resetHandling,
     requestHandlingMeta,
     checkInstallation,
     closePanel,

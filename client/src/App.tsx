@@ -28,7 +28,7 @@ const Dashboard = () => (
 
 const VehiclesPage = () => {
   
-  const { spawnVehicle, destroyVehicle, currentVehicle, isAvailable, updateHandling, requestHandlingMeta } = useALTV({
+  const { spawnVehicle, destroyVehicle, currentVehicle, isAvailable, updateHandling, resetHandling, requestHandlingMeta } = useALTV({
     onVehicleSpawned: (data) => {
       toast.success(`${data.modelName} заспавнен`)
     },
@@ -665,6 +665,7 @@ const VehiclesPage = () => {
               <div className="text-sm font-semibold text-white mb-3">Параметры</div>
               <TuningSliders
                 onChange={(param, value) => updateHandling(param, value)}
+                onReset={() => resetHandling()}
                 onXmlPatch={(param, value) => {
                   const tag = paramToXmlTag[param]
                   if (!tag || !handlingMetaXml) return

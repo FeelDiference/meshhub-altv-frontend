@@ -121,7 +121,7 @@ function parseHandlingXml(xml: string): Record<string, number> {
   return values
 }
 
-export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode }: { onChange: (parameter: string, value: number) => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean }) {
+export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean }) {
   const [values, setValues] = React.useState<Record<string, number>>({})
   const [defaults, setDefaults] = React.useState<Record<string, number>>({})
   const lastVehicleKey = React.useRef<string | null>(null)
@@ -165,6 +165,11 @@ export function TuningSliders({ onChange, onXmlPatch, disabled, initialValues, v
     }
     
     console.log('[TuningSliders] Resetting to defaults:', defaults)
+    
+    // Сначала вызываем reset всех нативов на клиенте
+    if (onReset) {
+      onReset()
+    }
     
     // Применяем заводские значения в игру и XML
     Object.entries(defaults).forEach(([k, v]) => {
