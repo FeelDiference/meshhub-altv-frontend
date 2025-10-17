@@ -126,6 +126,9 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
   const [defaults, setDefaults] = React.useState<Record<string, number>>({})
   const lastVehicleKey = React.useRef<string | null>(null)
   const [saveMode, setSaveMode] = React.useState<'local' | 'remote'>('local')
+  const [supportedParams, setSupportedParams] = React.useState<string[]>([])
+  const [unsupportedParams, setUnsupportedParams] = React.useState<string[]>([])
+  const hasShownRestoreToast = React.useRef<boolean>(false) // Флаг для показа toast только один раз
 
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
@@ -134,6 +137,62 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       onFocusModeToggle()
     }
   }
+
+  // Запрос информации о поддержке параметров при монтировании
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const alt = (window as any).alt
+      if (alt && typeof alt.emit === 'function' && typeof alt.on === 'function') {
+        // Обработчик ответа capabilities
+        const handleCapabilities = (data: any) => {
+          console.log('[TuningSliders] 📡 Received handling capabilities:', data)
+          if (data && data.working && data.nonWorking) {
+            setSupportedParams(data.working)
+            setUnsupportedParams(data.nonWorking)
+            console.log(`[TuningSliders] ✅ ${data.working.length} supported, ❌ ${data.nonWorking.length} unsupported`)
+          }
+        }
+        
+        // Обработчик сохранённых значений
+        const handleCurrentValues = (data: any) => {
+          if (data && Object.keys(data).length > 0) {
+            console.log('[TuningSliders] 💾 Received saved handling values:', data)
+            // Применяем сохранённые значения поверх текущих
+            setValues(prev => ({ ...prev, ...data }))
+            
+            // Показываем toast только ОДИН раз за сессию
+            if (!hasShownRestoreToast.current) {
+              toast.success(`Восстановлено ${Object.keys(data).length} сохранённых параметров`, {
+                duration: 2000,
+              })
+              hasShownRestoreToast.current = true
+            }
+          } else {
+            console.log('[TuningSliders] No saved handling values')
+          }
+        }
+        
+        // Регистрируем обработчики
+        alt.on('handling:supported:response', handleCapabilities)
+        alt.on('handling:current:response', handleCurrentValues)
+        
+        // Запрашиваем capabilities
+        alt.emit('handling:supported:request')
+        console.log('[TuningSliders] 🔍 Requesting handling capabilities...')
+        
+        // ПРИМЕЧАНИЕ: Сохранённые значения запрашиваются ПОСЛЕ парсинга XML
+        // (см. useEffect для initialValues)
+        
+        // Очистка при размонтировании
+        return () => {
+          if (alt && typeof alt.off === 'function') {
+            alt.off('handling:supported:response', handleCapabilities)
+            alt.off('handling:current:response', handleCurrentValues)
+          }
+        }
+      }
+    }
+  }, [])
 
   // Parse XML when initialValues changes
   React.useEffect(() => {
@@ -148,6 +207,19 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       console.log('[TuningSliders] Saving initial defaults for', vehicleKey, ':', parsed)
       setDefaults(parsed)
       lastVehicleKey.current = vehicleKey || null
+      
+      // Сбрасываем флаг toast при смене автомобиля
+      hasShownRestoreToast.current = false
+    }
+    
+    // ВАЖНО: После парсинга XML запрашиваем сохранённые значения
+    // чтобы они применились поверх дефолтных из XML
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const alt = (window as any).alt
+      if (alt && typeof alt.emit === 'function') {
+        console.log('[TuningSliders] 🔄 XML parsed, requesting saved values to override...')
+        alt.emit('handling:current:request')
+      }
     }
   }, [initialValues, vehicleKey])
 
@@ -349,24 +421,57 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
 
       {/* Сетка слайдеров */}
       <div className="grid grid-cols-2 gap-4">
-        {SLIDERS.map(s => (
-          <div key={s.key} className="text-xs text-gray-300">
-            <div className="flex items-center justify-between mb-1">
-              <span>{s.label}</span>
-              <span className="text-gray-400">{(values[s.key] ?? s.min)?.toFixed(2)}</span>
+        {SLIDERS.map(s => {
+          const isUnsupported = unsupportedParams.includes(s.key)
+          const isSupported = supportedParams.includes(s.key)
+          
+          return (
+            <div 
+              key={s.key} 
+              className={`text-xs ${isUnsupported ? 'opacity-60' : 'text-gray-300'}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={isUnsupported ? 'text-red-400' : ''}>{s.label}</span>
+                  {isUnsupported && (
+                    <span 
+                      className="text-xs text-red-500 cursor-help" 
+                      title="Этот параметр не работает ingame. Требуется изменение handling.meta"
+                    >
+                      ⚠️
+                    </span>
+                  )}
+                  {isSupported && (
+                    <span 
+                      className="text-xs text-green-500" 
+                      title="Параметр работает в реальном времени"
+                    >
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <span className={`text-gray-400 ${isUnsupported ? 'line-through' : ''}`}>
+                  {(values[s.key] ?? s.min)?.toFixed(2)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={s.min}
+                max={s.max}
+                step={s.step}
+                value={values[s.key] ?? s.min}
+                onChange={(e) => update(s.key, Number(e.target.value))}
+                className={`w-full ${isUnsupported ? 'brand-range-disabled' : 'brand-range'}`}
+                disabled={disabled}
+              />
+              {isUnsupported && (
+                <div className="text-[10px] text-red-500/70 mt-0.5">
+                  Не работает ingame
+                </div>
+              )}
             </div>
-            <input
-              type="range"
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              value={values[s.key] ?? s.min}
-              onChange={(e) => update(s.key, Number(e.target.value))}
-              className="w-full brand-range"
-              disabled={disabled}
-            />
-          </div>
-        ))}
+          )
+        })}
       </div>
       <style>{`
         .tuning-panel .brand-range {
@@ -385,6 +490,26 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
         .tuning-panel .brand-range::-moz-range-thumb {
           width: 14px; height: 14px; border-radius: 9999px;
           background: #8b5cf6; border: 2px solid #3b82f6;
+        }
+        
+        /* Неподдерживаемые параметры - красный цвет */
+        .tuning-panel .brand-range-disabled {
+          -webkit-appearance: none;
+          height: 6px;
+          background: linear-gradient(90deg, rgba(239,68,68,.3), rgba(185,28,28,.3));
+          border-radius: 9999px;
+          outline: none;
+          opacity: 0.5;
+        }
+        .tuning-panel .brand-range-disabled::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 14px; height: 14px; border-radius: 9999px;
+          background: #ef4444; border: 2px solid #dc2626;
+          box-shadow: 0 0 0 3px rgba(239,68,68,.2);
+        }
+        .tuning-panel .brand-range-disabled::-moz-range-thumb {
+          width: 14px; height: 14px; border-radius: 9999px;
+          background: #ef4444; border: 2px solid #dc2626;
         }
       `}</style>
     </div>
