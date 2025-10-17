@@ -13,7 +13,11 @@ import {
   Maximize2,
   Minimize2,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  DoorOpen,
+  Car as CarIcon,
+  Lock,
+  Unlock
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import VehicleTuning from './VehicleTuning'
@@ -76,7 +80,15 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       'indicators_off': 'Выключить поворотники',
       'engine_toggle': 'Переключить двигатель',
       'horn': 'Сигнал',
-      'siren_toggle': 'Сирена'
+      'siren_toggle': 'Сирена',
+      'doors_all_open': 'Открыть все двери',
+      'doors_all_close': 'Закрыть все двери',
+      'door_front_left': 'Передняя левая дверь',
+      'door_front_right': 'Передняя правая дверь',
+      'door_rear_left': 'Задняя левая дверь',
+      'door_rear_right': 'Задняя правая дверь',
+      'door_hood': 'Капот',
+      'door_trunk': 'Багажник'
     }
     return names[action] || action
   }
@@ -120,6 +132,20 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       actions: [
         { id: 'horn', label: 'Сигнал', icon: <Radio className="w-4 h-4" />, color: 'text-purple-400' },
         { id: 'siren_toggle', label: 'Сирена ВКЛ/ВЫКЛ', icon: <Wind className="w-4 h-4" />, color: 'text-blue-400' }
+      ]
+    },
+    {
+      title: 'Двери и капот',
+      icon: <DoorOpen className="w-4 h-4" />,
+      actions: [
+        { id: 'doors_all_open', label: 'Все двери', icon: <Unlock className="w-4 h-4" />, color: 'text-green-400' },
+        { id: 'doors_all_close', label: 'Закрыть все', icon: <Lock className="w-4 h-4" />, color: 'text-red-400' },
+        { id: 'door_front_left', label: 'Передняя левая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
+        { id: 'door_front_right', label: 'Передняя правая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
+        { id: 'door_rear_left', label: 'Задняя левая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
+        { id: 'door_rear_right', label: 'Задняя правая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
+        { id: 'door_hood', label: 'Капот', icon: <CarIcon className="w-4 h-4" />, color: 'text-yellow-400' },
+        { id: 'door_trunk', label: 'Багажник', icon: <CarIcon className="w-4 h-4" />, color: 'text-orange-400' }
       ]
     }
   ]

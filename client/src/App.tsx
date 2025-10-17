@@ -433,11 +433,29 @@ const VehiclesPage = () => {
         }
       }
 
+      const handleVehicleSpawned = (data: { vehicleId: number; modelName: string; position: any }) => {
+        console.log('[VehiclesPage] Vehicle spawned successfully:', data.modelName)
+        toast.success(`Машина ${data.modelName} успешно заспавнена!`, {
+          duration: 3000,
+        })
+      }
+
+      const handleVehicleSpawnError = (data: { modelName: string; error: string; details: string }) => {
+        console.log('[VehiclesPage] Vehicle spawn error:', data.error)
+        toast.error(`Ошибка спавна ${data.modelName}:\n${data.error}`, {
+          duration: 5000,
+        })
+      }
+
       ;(window as any).alt.on('vehicle:downloaded', handleDownloaded)
       ;(window as any).alt.on('meshhub:vehicle:handling:saved', handleHandlingSaved)
+      ;(window as any).alt.on('vehicle:spawned', handleVehicleSpawned)
+      ;(window as any).alt.on('vehicle:spawn:error', handleVehicleSpawnError)
       return () => {
         (window as any).alt.off?.('vehicle:downloaded', handleDownloaded)
         ;(window as any).alt.off?.('meshhub:vehicle:handling:saved', handleHandlingSaved)
+        ;(window as any).alt.off?.('vehicle:spawned', handleVehicleSpawned)
+        ;(window as any).alt.off?.('vehicle:spawn:error', handleVehicleSpawnError)
       }
     }
   }, [])

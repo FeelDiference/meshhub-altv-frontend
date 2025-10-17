@@ -22,6 +22,60 @@ interface VehicleColor {
   hex: string
 }
 
+// Словарь человеческих названий и технических названий
+const CATEGORY_NAMES: Record<number, { human: string; technical: string }> = {
+  0: { human: 'Спойлеры', technical: 'VMT_SPOILER' },
+  1: { human: 'Передний бампер', technical: 'VMT_BUMPER_F' },
+  2: { human: 'Задний бампер', technical: 'VMT_BUMPER_R' },
+  3: { human: 'Пороги', technical: 'VMT_SKIRT' },
+  4: { human: 'Выхлоп', technical: 'VMT_EXHAUST' },
+  5: { human: 'Каркас', technical: 'VMT_CHASSIS' },
+  6: { human: 'Решётка', technical: 'VMT_GRILL' },
+  7: { human: 'Капот', technical: 'VMT_BONNET' },
+  8: { human: 'Крыло', technical: 'VMT_WING_L' },
+  9: { human: 'Крыло', technical: 'VMT_WING_R' },
+  10: { human: 'Крыша', technical: 'VMT_ROOF' },
+  11: { human: 'Двигатель', technical: 'VMT_ENGINE' },
+  12: { human: 'Тормоза', technical: 'VMT_BRAKES' },
+  13: { human: 'Трансмиссия', technical: 'VMT_GEARBOX' },
+  14: { human: 'Клаксон', technical: 'VMT_HORN' },
+  15: { human: 'Подвеска', technical: 'VMT_SUSPENSION' },
+  16: { human: 'Броня', technical: 'VMT_ARMOUR' },
+  17: { human: 'Азот', technical: 'VMT_NITROUS' },
+  18: { human: 'Турбо', technical: 'VMT_TURBO' },
+  19: { human: 'Сабвуфер', technical: 'VMT_SUBWOOFER' },
+  20: { human: 'Дым колёс', technical: 'VMT_TYRE_SMOKE' },
+  21: { human: 'Гидравлика', technical: 'VMT_HYDRAULICS' },
+  22: { human: 'Ксенон', technical: 'VMT_XENON_LIGHTS' },
+  23: { human: 'Передние колёса', technical: 'VMT_WHEELS' },
+  24: { human: 'Задние колёса', technical: 'VMT_WHEELS_REAR_OR_HYDRAULICS' },
+  25: { human: 'Цвет пластин', technical: 'VMT_PLTHOLDER' },
+  26: { human: 'Пластины', technical: 'VMT_PLTVANITY' },
+  27: { human: 'Отделка салона', technical: 'VMT_INTERIOR1' },
+  28: { human: 'Приборы', technical: 'VMT_INTERIOR2' },
+  29: { human: 'Интерьер', technical: 'VMT_INTERIOR3' },
+  30: { human: 'Циферблат', technical: 'VMT_INTERIOR4' },
+  31: { human: 'Интерьер', technical: 'VMT_INTERIOR5' },
+  32: { human: 'Сиденья', technical: 'VMT_SEATS' },
+  33: { human: 'Руль', technical: 'VMT_STEERING' },
+  34: { human: 'Ручка КПП', technical: 'VMT_KNOB' },
+  35: { human: 'Шильдики', technical: 'VMT_PLAQUE' },
+  36: { human: 'Аудио', technical: 'VMT_ICE' },
+  37: { human: 'Багажник', technical: 'VMT_TRUNK' },
+  38: { human: 'Гидравлика', technical: 'VMT_HYDRO' },
+  39: { human: 'Моторный отсек', technical: 'VMT_ENGINEBAY1' },
+  40: { human: 'Моторный отсек', technical: 'VMT_ENGINEBAY2' },
+  41: { human: 'Моторный отсек', technical: 'VMT_ENGINEBAY3' },
+  42: { human: 'Каркас', technical: 'VMT_CHASSIS2' },
+  43: { human: 'Каркас', technical: 'VMT_CHASSIS3' },
+  44: { human: 'Каркас', technical: 'VMT_CHASSIS4' },
+  45: { human: 'Каркас', technical: 'VMT_CHASSIS5' },
+  46: { human: 'Дверь левая', technical: 'VMT_DOOR_L' },
+  47: { human: 'Дверь правая', technical: 'VMT_DOOR_R' },
+  48: { human: 'Ливрея', technical: 'VMT_LIVERY_MOD' },
+  49: { human: 'Проблесковые маячки', technical: 'VMT_LIGHTBAR' }
+}
+
 const TUNING_CATEGORIES: TuningCategory[] = [
   { id: 0, name: 'Спойлеры', icon: <Wrench className="w-4 h-4" />, description: 'Задние спойлеры' },
   { id: 1, name: 'Передний бампер', icon: <Wrench className="w-4 h-4" />, description: 'Передний бампер' },
@@ -223,6 +277,8 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
   const [selectedCategory, setSelectedCategory] = useState(0)
   const [categoryMods, setCategoryMods] = useState<Record<number, any[]>>({})
   const [currentMods, setCurrentMods] = useState<Record<number, number>>({})
+  const [categoryNames, setCategoryNames] = useState<Record<number, string>>({}) // Названия категорий от нативов
+  const [categorySlotNames, setCategorySlotNames] = useState<Record<number, boolean>>({}) // Флаги наличия slot names
   const [currentColors, setCurrentColors] = useState({
     primary: 0,
     secondary: 0,
@@ -367,22 +423,43 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
     }
   }, [selectedCategory, activeTab])
 
-  // При инициализации проверяем все категории на доступность
+  // При инициализации и смене машины проверяем все категории на доступность
   useEffect(() => {
-    if (activeTab === 'tuning' && availableCategories.length === 0) {
+    if (activeTab === 'tuning') {
+      console.log('[VehicleTuning] 🔧 Starting auto-detect for vehicle:', vehicleName)
+      // Сбрасываем доступные категории при смене машины
+      setAvailableCategories([])
+      setCategoryMods({})
+      setCurrentMods({})
+      setCategoryNames({})
+      
       // Проверяем все категории на доступность
       TUNING_CATEGORIES.forEach(category => {
         loadCategoryMods(category.id)
       })
     }
-  }, [activeTab])
+  }, [activeTab, vehicleName])
 
   // Слушаем ответы от AltV
   useEffect(() => {
     if (typeof window === 'undefined' || !('alt' in window)) return
 
-    const handleModsResponse = (data: { categoryId: number; mods: any[]; currentMod: number }) => {
+    const handleModsResponse = (data: { categoryId: number; categoryName?: string; mods: any[]; currentMod: number; hasSlotName?: boolean }) => {
       const mods = data.mods || []
+      
+      console.log(`[VehicleTuning] 📡 Received mods for category ${data.categoryId}: ${mods.length} mods`)
+      console.log(`[VehicleTuning] 🏷️ Category name:`, data.categoryName)
+      console.log(`[VehicleTuning] 🔍 Has slot name:`, data.hasSlotName)
+      
+      // Сохраняем название категории
+      if (data.categoryName) {
+        setCategoryNames(prev => ({ ...prev, [data.categoryId]: data.categoryName! }))
+      }
+      
+      // Сохраняем флаг наличия slot name
+      if (data.hasSlotName !== undefined) {
+        setCategorySlotNames(prev => ({ ...prev, [data.categoryId]: data.hasSlotName! }))
+      }
       
       setCategoryMods(prev => ({ ...prev, [data.categoryId]: mods }))
       setCurrentMods(prev => ({ ...prev, [data.categoryId]: data.currentMod }))
@@ -393,9 +470,11 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
         if (mods.length > 0 && !newCategories.includes(data.categoryId)) {
           newCategories.push(data.categoryId)
           newCategories.sort((a, b) => a - b)
+          console.log(`[VehicleTuning] ✅ Added category ${data.categoryId} to available list`)
         } else if (mods.length === 0 && newCategories.includes(data.categoryId)) {
           const index = newCategories.indexOf(data.categoryId)
           newCategories.splice(index, 1)
+          console.log(`[VehicleTuning] ❌ Removed category ${data.categoryId} from available list`)
         }
         return newCategories
       })
@@ -462,29 +541,39 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {availableCategories.length > 0 ? (
-                availableCategories.map((categoryId) => {
-                  const category = TUNING_CATEGORIES.find(c => c.id === categoryId)
-                  if (!category) return null
-                  
-                  return (
-                    <button
-                      key={category.id}
-                      onClick={() => {
-                        setSelectedCategory(categoryId)
-                        loadCategoryMods(categoryId)
-                      }}
-                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        selectedCategory === categoryId
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-base-800 text-gray-300 hover:bg-base-700'
-                      }`}
-                    >
-                      {category.icon}
-                      <span className="truncate">{category.name}</span>
-                    </button>
-                  )
-                })
+                     {availableCategories.length > 0 ? (
+                       availableCategories.map((categoryId) => {
+                         const category = TUNING_CATEGORIES.find(c => c.id === categoryId)
+                         if (!category) return null
+                         
+                         const hasSlotName = categorySlotNames[categoryId] !== false // По умолчанию true, если не установлено
+                         const categoryInfo = CATEGORY_NAMES[categoryId]
+                         const humanName = categoryInfo?.human || category.name
+                         const technicalName = categoryInfo?.technical || `VMT_${categoryId}`
+                         
+                         return (
+                           <button
+                             key={category.id}
+                             onClick={() => {
+                               setSelectedCategory(categoryId)
+                               loadCategoryMods(categoryId)
+                             }}
+                             className={`flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                               selectedCategory === categoryId
+                                 ? 'bg-primary-600 text-white'
+                                 : hasSlotName 
+                                   ? 'bg-base-800 text-gray-300 hover:bg-base-700'
+                                   : 'bg-red-900/50 text-red-300 hover:bg-red-800/50 border border-red-700/50'
+                             }`}
+                           >
+                             <div className="flex items-center space-x-2">
+                               {category.icon}
+                               <span className="truncate font-semibold">{humanName}</span>
+                             </div>
+                             <span className="text-xs opacity-70">({technicalName})</span>
+                           </button>
+                         )
+                       })
               ) : (
                 <div className="col-span-2 text-center py-4">
                   <div className="text-sm text-orange-400 mb-2">
@@ -501,13 +590,21 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
           {/* Переключатель модов */}
           {availableCategories.includes(selectedCategory) && (
             <div className="bg-base-900/50 border border-base-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center space-x-2">
-                  {TUNING_CATEGORIES.find(c => c.id === selectedCategory)?.icon}
-                  <span className="text-sm font-medium text-white">
-                    {TUNING_CATEGORIES.find(c => c.id === selectedCategory)?.name}
-                  </span>
-                </div>
+                     <div className="flex items-center justify-between mb-3">
+                       <div className="flex flex-col space-y-1">
+                         <div className="flex items-center space-x-2">
+                           {TUNING_CATEGORIES.find(c => c.id === selectedCategory)?.icon}
+                           <span className="text-sm font-medium text-white">
+                             {(() => {
+                               const categoryInfo = CATEGORY_NAMES[selectedCategory]
+                               return categoryInfo?.human || categoryNames[selectedCategory] || TUNING_CATEGORIES.find(c => c.id === selectedCategory)?.name
+                             })()}
+                           </span>
+                         </div>
+                         <span className="text-xs text-gray-400">
+                           ({CATEGORY_NAMES[selectedCategory]?.technical || `VMT_${selectedCategory}`})
+                         </span>
+                       </div>
                 <div className="text-xs text-gray-400">
                   {(() => {
                     const mods = categoryMods[selectedCategory] || []
@@ -561,7 +658,20 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
                         }
                         
                         if (currentMod === -1) return 'Стандарт'
-                        return mods[currentMod]?.name || `Мод #${currentMod + 1}`
+                        
+                        const mod = mods[currentMod]
+                        if (!mod) return `Мод #${currentMod + 1}`
+                        
+       // Простое отображение названия мода
+       const name = mod.name || `Мод #${currentMod + 1}`
+       
+       return (
+         <div className="flex items-center justify-center">
+           <span className="text-white">
+             {name}
+           </span>
+         </div>
+       )
                       })()}
                     </div>
                   )}
