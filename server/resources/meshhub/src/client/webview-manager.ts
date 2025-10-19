@@ -111,6 +111,12 @@ export class WebViewManager {
       this.checkModelInstallation(data.modelName)
     })
 
+    // Weapon events
+    this.webview.on('weapon:give', (data: { name: string; modelName: string; hash: string | number }) => {
+      alt.log(`[MeshHub] WebView requested to give weapon: ${data.name}`)
+      alt.emitServer('meshhub:weapon:give', data.name, data.hash)
+    })
+
     // Логируем все события для отладки
     this.webview.on('webview:ready', () => {
       alt.log('[MeshHub] WebView is ready')

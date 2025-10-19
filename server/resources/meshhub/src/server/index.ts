@@ -3,6 +3,7 @@
 import * as alt from 'alt-server'
 import { CommandManager } from './command-manager'
 import { VehicleManager } from './vehicle-manager'
+import { InteriorManager } from './interior-manager'
 import { downloadVehicle, checkVehicleExists } from './vehicle-downloader'
 
 /**
@@ -21,6 +22,7 @@ alt.on('resourceStart', () => {
   // Инициализируем менеджеры
   CommandManager.initialize()
   VehicleManager.initialize()
+  InteriorManager.initialize()
   
   alt.log('[MeshHub] ✅ Server initialization complete')
   alt.log('[MeshHub] Version: 1.0.0')
@@ -91,6 +93,40 @@ alt.onClient('meshhub:vehicle:download', async (player: alt.Player, data: { vehi
 })
 
 /**
+ * Обработка выдачи оружия
+ */
+alt.onClient('meshhub:weapon:give', (player: alt.Player, weaponName: string, weaponHash: string | number) => {
+  alt.log(`[MeshHub] Weapon give request from ${player.name}: ${weaponName}`)
+  
+  try {
+    // Convert hash to number if string
+    let hash: number
+    if (typeof weaponHash === 'string') {
+      // Try to parse as hash name (e.g., "WEAPON_PISTOL")
+      hash = alt.hash(weaponHash)
+    } else {
+      hash = weaponHash
+    }
+    
+    // Convert negative hash to unsigned 32-bit integer if needed
+    if (hash < 0) {
+      hash = hash >>> 0
+    }
+    
+    alt.log(`[MeshHub] Giving weapon ${weaponName} (hash: ${hash}) to player ${player.name}`)
+    
+    // Give weapon with ammo
+    player.giveWeapon(hash, 250, true)
+    
+    sendChatMessage(player, `[MeshHub] ✅ Выдано оружие: ${weaponName}`)
+    
+  } catch (error: any) {
+    alt.logError(`[MeshHub] Error giving weapon: ${error.message}`)
+    sendChatMessage(player, `[MeshHub] ❌ Ошибка выдачи оружия: ${error.message}`)
+  }
+})
+
+/**
  * Обработка остановки ресурса
  */
 alt.on('resourceStop', () => {
@@ -107,6 +143,7 @@ alt.on('resourceStop', () => {
   
   // Очищаем все данные
   VehicleManager.cleanup()
+  InteriorManager.cleanup()
   
   alt.log('[MeshHub] ✅ Server stopped')
 })

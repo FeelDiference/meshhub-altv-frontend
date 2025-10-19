@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive } from 'lucide-react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
 import HandlingMetaEditor from '@/components/vehicles/HandlingMetaEditor'
 import VehicleActions from '@/components/vehicles/VehicleActions'
+import WeaponActions from '@/components/weapons/WeaponActions'
 import Portal from '@/components/common/Portal'
 import { fetchHandlingMeta } from '@/services/rpf'
 import { updateXmlNumericValue, paramToXmlTag } from '@/utils/updateXml'
@@ -17,9 +18,27 @@ import { logAppPathInfo } from '@/utils/pathDetection'
 import { downloadVehicleWithStatus, reloadVehicle, type VehicleStatus } from '@/services/vehicleManager'
 import { getAccessToken } from '@/services/auth'
 import { getGTAVVehicles, getGTAVCategories, type GTAVVehicle } from '@/data/gtav-vehicles-with-categories'
+import { getWeapons } from '@/services/weapons'
+import type { WeaponResource } from '@/types/weapon'
+import { downloadWeaponToLocal, checkWeaponExists, type WeaponStatus } from '@/services/weaponManager'
+import { getGTAVWeapons, getGTAVWeaponCategories, type GTAVWeapon } from '@/data/gtav-weapons'
+import WeaponTuningSliders from '@/components/weapons/WeaponTuningSliders'
+import WeaponMetaEditor from '@/components/weapons/WeaponMetaEditor'
+import { loadWeaponsMeta, parseWeaponsMeta, updateWeaponXmlValue, type WeaponsMetaIndex } from '@/services/weaponsMetaParser'
+import { InteriorsPage } from '@/components/interiors/InteriorsPage'
+import FavoritesPage from '@/components/favorites/FavoritesPage'
+import WorldPage from '@/components/world/WorldPage'
+import CharacterPage from '@/components/character/CharacterPage'
 
 // Общий тип для всех машин
 type AnyVehicle = VehicleResource | (GTAVVehicle & { 
+  isGTAV: true
+  id: string
+  modelName: string
+})
+
+// Общий тип для всего оружия
+type AnyWeapon = WeaponResource | (GTAVWeapon & { 
   isGTAV: true
   id: string
   modelName: string
@@ -1049,19 +1068,667 @@ const VehiclesPage = () => {
   )
 }
 
-const InteriorPlaceholder = () => (
-  <div className="flex-1 p-6">
-    <h1 className="text-2xl font-bold text-white mb-4">Интерьеры</h1>
-    <p className="text-gray-400">Скоро будет доступно</p>
-  </div>
-)
+const WeaponsPage = () => {
+  const { isAvailable } = useALTV()
+  const [weapons, setWeapons] = useState<WeaponResource[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [weaponStatuses, setWeaponStatuses] = useState<Map<string, WeaponStatus>>(new Map())
+  const [activeTab, setActiveTab] = useState<'hub' | 'gtav' | 'local'>('hub')
+  const [selectedCategory, setSelectedCategory] = useState<string>('All')
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  
+  // GTAV оружие загружается локально
+  const [gtavWeapons] = useState<GTAVWeapon[]>(() => getGTAVWeapons())
+  const [gtavCategories] = useState<string[]>(() => ['All', ...getGTAVWeaponCategories()])
+  
+  // Local оружие пользователя
+  const [localWeapons] = useState<AnyWeapon[]>([])
+  
+  // Панели и модальные окна
+  const [selectedWeapon, setSelectedWeapon] = useState<AnyWeapon | null>(null)
+  const [panelsVisible, setPanelsVisible] = useState(false)
+  const [showWeaponTuning, setShowWeaponTuning] = useState(true)
+  const [showWeaponMeta, setShowWeaponMeta] = useState(true)
+  const [showWeaponActions, setShowWeaponActions] = useState(true)
+  const [focusMode, setFocusMode] = useState<'off' | 'tuning' | 'meta' | 'actions'>('off')
+  
+  // Синхронизируем focusMode с глобальной переменной для скрытия главного меню
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      ;(window as any).__focusMode = focusMode
+    }
+  }, [focusMode])
+  
+  // Weapons.meta и XML
+  // @ts-ignore - используется в WeaponTuningSliders
+  const [weaponsMetaIndex, setWeaponsMetaIndex] = useState<WeaponsMetaIndex | null>(null)
+  const [weaponMetaXml, setWeaponMetaXml] = useState<string>('')
+  const [currentWeapon, setCurrentWeapon] = useState<{ name: string; id: string } | null>(null)
 
-const WeaponsPlaceholder = () => (
+  // Weapons.meta теперь загружается по требованию с сервера (не нужен предзагрузка)
+  
+  // Load selected weapon XML when weapon changes
+  useEffect(() => {
+    if (!selectedWeapon) return
+    
+    const weaponName = selectedWeapon.name.toUpperCase()
+    
+    // Загружаем XML для конкретного оружия с сервера
+    loadWeaponsMeta(weaponName).then(xmlString => {
+      setWeaponMetaXml(xmlString)
+      
+      // Парсим для индекса (если нужно отображать слайдеры)
+      const index = parseWeaponsMeta(xmlString)
+      setWeaponsMetaIndex(index)
+      
+      console.log('[WeaponsPage] Loaded XML for weapon:', weaponName)
+    }).catch(error => {
+      console.warn('[WeaponsPage] Weapon XML not found:', weaponName, error.message)
+      
+      // Очищаем XML и индекс, но оставляем возможность менять нативки
+      setWeaponMetaXml('')
+      setWeaponsMetaIndex(null)
+      
+      // Показываем уведомление (используем warning вместо info)
+      console.info(`[WeaponsPage] XML config not available for ${weaponName}`)
+    })
+  }, [selectedWeapon])
+
+  // Load weapons from backend
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        const loadedWeapons = await getWeapons()
+        setWeapons(loadedWeapons)
+        
+        // Check installation status for each weapon
+        const statuses = new Map<string, WeaponStatus>()
+        for (const weapon of loadedWeapons) {
+          const isInstalled = await checkWeaponExists(weapon)
+          statuses.set(weapon.id, isInstalled ? 'downloaded' : 'not_downloaded')
+        }
+        setWeaponStatuses(statuses)
+      } catch (err: any) {
+        setError(err.message)
+        console.error('Ошибка загрузки оружия:', err)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+  
+  // Обработчик получения оружия в руки (аналог onPlayerEnteredVehicle для автомобилей)
+  useEffect(() => {
+    if (!(typeof window !== 'undefined' && 'alt' in window)) return
+    
+    const onWeaponEquipped = (data: { weaponName: string; weaponHash: number }) => {
+      console.log('[WeaponsPage] 🔫 Player equipped weapon:', data.weaponName)
+      console.log('[WeaponsPage] 🔍 Searching for weapon in lists...')
+      
+      // Ищем оружие в списках (GTAV или кастомные)
+      let weapon: AnyWeapon | null = null
+      
+      // Сначала ищем в GTAV
+      console.log('[WeaponsPage] 🔍 Searching in GTAV weapons:', gtavWeapons.length)
+      const gtavWeapon = gtavWeapons.find(w => w.name.toLowerCase() === data.weaponName.toLowerCase())
+      if (gtavWeapon) {
+        console.log('[WeaponsPage] ✅ Found in GTAV list:', gtavWeapon.name)
+        weapon = {
+          ...gtavWeapon,
+          id: gtavWeapon.name,
+          modelName: gtavWeapon.name,
+          isGTAV: true as const
+        }
+      } else {
+        console.log('[WeaponsPage] 🔍 Not found in GTAV, searching in custom weapons:', weapons.length)
+        // Ищем в кастомных
+        weapon = weapons.find(w => w.name.toLowerCase() === data.weaponName.toLowerCase()) || null
+        if (weapon) {
+          console.log('[WeaponsPage] ✅ Found in custom weapons:', weapon.name)
+        } else {
+          console.log('[WeaponsPage] ❌ Not found in custom weapons')
+        }
+      }
+      
+      if (weapon) {
+        console.log('[WeaponsPage] ✅ Found weapon, setting as selected and current:', weapon.name)
+        setSelectedWeapon(weapon)
+        setCurrentWeapon({ name: weapon.name, id: weapon.id })
+        setShowWeaponTuning(true)
+        setShowWeaponMeta(true)
+        setShowWeaponActions(true)
+        setPanelsVisible(true)
+      } else {
+        console.warn('[WeaponsPage] ❌ Weapon not found in lists:', data.weaponName)
+      }
+    }
+    
+    const onWeaponUnequipped = () => {
+      console.log('[WeaponsPage] 🔫 Player unequipped weapon')
+      setCurrentWeapon(null)
+    }
+    
+    ;(window as any).alt.on('weapon:equipped', onWeaponEquipped)
+    ;(window as any).alt.on('weapon:unequipped', onWeaponUnequipped)
+    
+    return () => {
+      ;(window as any).alt.off?.('weapon:equipped', onWeaponEquipped)
+      ;(window as any).alt.off?.('weapon:unequipped', onWeaponUnequipped)
+    }
+  }, [weapons, gtavWeapons])
+
+  const handleDownload = async (weapon: WeaponResource) => {
+    try {
+      setWeaponStatuses(prev => new Map(prev.set(weapon.id, 'checking')))
+      const token = getAccessToken()
+      if (!token) {
+        throw new Error('Токен авторизации не найден')
+      }
+      await downloadWeaponToLocal(weapon, token)
+      setWeaponStatuses(prev => new Map(prev.set(weapon.id, 'downloaded')))
+      toast.success(`Оружие ${weapon.displayName} скачано`)
+    } catch (err: any) {
+      console.error('Ошибка скачивания:', err)
+      setWeaponStatuses(prev => new Map(prev.set(weapon.id, 'not_downloaded')))
+      toast.error(`Ошибка скачивания: ${err.message}`)
+    }
+  }
+
+  const handleReload = async (weapon: WeaponResource) => {
+    try {
+      setWeaponStatuses(prev => new Map(prev.set(weapon.id, 'checking')))
+      const token = getAccessToken()
+      if (!token) {
+        throw new Error('Токен авторизации не найден')
+      }
+      await downloadWeaponToLocal(weapon, token)
+      setWeaponStatuses(prev => new Map(prev.set(weapon.id, 'downloaded')))
+      toast.success(`Оружие ${weapon.displayName} перезагружено`)
+    } catch (err: any) {
+      console.error('Ошибка перезагрузки:', err)
+      setWeaponStatuses(prev => new Map(prev.set(weapon.id, 'not_downloaded')))
+      toast.error(`Ошибка перезагрузки: ${err.message}`)
+    }
+  }
+
+  const handleGiveWeapon = (weapon: AnyWeapon) => {
+    if (!isAvailable) {
+      toast.error('ALT:V не доступен')
+      return
+    }
+    
+    // Emit event to give weapon to player
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const weaponHash = 'isGTAV' in weapon ? weapon.hash : (weapon.metadata?.weaponType || weapon.name)
+      ;(window as any).alt.emit('weapon:give', {
+        name: weapon.name,
+        modelName: weapon.modelName || weapon.name,
+        hash: weaponHash
+      })
+      toast.success(`Выдано оружие: ${weapon.displayName}`)
+      
+      // Set as current weapon
+      setCurrentWeapon({ name: weapon.name, id: weapon.id })
+    }
+  }
+  
+  // Обновление параметров оружия
+  const updateWeaponParameter = (param: string, value: number) => {
+    if (!isAvailable || !currentWeapon) {
+      console.warn('[WeaponsPage] Cannot update weapon parameters - not in game or no weapon selected')
+      return
+    }
+    
+    console.log(`[WeaponsPage] Updating weapon parameter: ${param} = ${value}`)
+    
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      ;(window as any).alt.emit('weapon:update', {
+        weaponName: currentWeapon.name,
+        parameter: param,
+        value
+      })
+    }
+  }
+  
+  // Сброс параметров оружия
+  const resetWeaponParameters = () => {
+    if (!selectedWeapon) return
+    
+    console.log('[WeaponsPage] Resetting weapon parameters')
+    
+    // Reload original XML from server
+    const weaponName = selectedWeapon.name.toUpperCase()
+    loadWeaponsMeta(weaponName).then(xmlString => {
+      setWeaponMetaXml(xmlString)
+      
+      // Обновляем индекс
+      const index = parseWeaponsMeta(xmlString)
+      setWeaponsMetaIndex(index)
+      toast.success('Параметры сброшены')
+    }).catch(error => {
+      console.error('[WeaponsPage] Failed to reset weapon parameters:', error)
+      toast.error('Ошибка сброса параметров')
+    })
+  }
+
+  // Получаем список оружия в зависимости от активной вкладки
+  const getCurrentWeapons = (): AnyWeapon[] => {
+    switch (activeTab) {
+      case 'hub':
+        // Фильтруем HUB оружие - исключаем GTAV оружие
+        return weapons.filter(weapon => {
+          // Проверяем, не является ли это GTAV оружием
+          const isGTAVWeapon = gtavWeapons.some(gtav => 
+            gtav.name.toLowerCase() === weapon.name.toLowerCase()
+          )
+          return !isGTAVWeapon
+        })
+      case 'gtav':
+        const filteredGTAV = selectedCategory === 'All' 
+          ? gtavWeapons 
+          : gtavWeapons.filter(w => w.category === selectedCategory)
+        
+        return filteredGTAV.map(w => ({
+          ...w,
+          id: w.name,
+          modelName: w.name,
+          isGTAV: true as const
+        }))
+      case 'local':
+        return localWeapons
+      default:
+        return weapons
+    }
+  }
+
+  // Фильтрация оружия по поиску
+  const currentWeapons = getCurrentWeapons()
+  const filteredWeapons = currentWeapons
+    .filter(w => {
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        w.name?.toLowerCase().includes(q) ||
+        w.displayName?.toLowerCase().includes(q) ||
+        w.modelName?.toLowerCase().includes(q)
+      )
+    })
+    .sort((a, b) => {
+      // Для HUB оружия - установленное сверху
+      if (activeTab === 'hub') {
+        const aInstalled = weaponStatuses.get(a.id) === 'downloaded'
+        const bInstalled = weaponStatuses.get(b.id) === 'downloaded'
+        
+        if (aInstalled && !bInstalled) return -1
+        if (!aInstalled && bInstalled) return 1
+      }
+      
+      // Сортировка по имени
+      return (a.displayName || a.name).localeCompare(b.displayName || b.name)
+    })
+
+  return (
   <div className="flex-1 p-6">
-    <h1 className="text-2xl font-bold text-white mb-4">Оружие</h1>
-    <p className="text-gray-400">Скоро будет доступно</p>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white mb-2">Оружие</h1>
+        <div className="flex items-center space-x-2 text-sm">
+          <div className={`px-2 py-1 rounded-full text-xs ${isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'}`}>
+            {isAvailable ? '🎮 ALT:V' : '🌐 Browser'}
+          </div>
+        </div>
+        
+        {/* Кнопки категорий */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <button
+            className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+              activeTab === 'hub' 
+                ? 'bg-primary-600/50 text-white border border-primary-500/30' 
+                : 'bg-base-800/50 text-gray-300 hover:bg-base-700/50 border border-base-700/30 hover:border-base-600/50'
+            }`}
+            onClick={() => setActiveTab('hub')}
+          >
+            <Cloud className="w-4 h-4" />
+            <span>HUB</span>
+          </button>
+          <button
+            className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+              activeTab === 'gtav' 
+                ? 'bg-primary-600/50 text-white border border-primary-500/30' 
+                : 'bg-base-800/50 text-gray-300 hover:bg-base-700/50 border border-base-700/30 hover:border-base-600/50'
+            }`}
+            onClick={() => setActiveTab('gtav')}
+          >
+            <Gamepad2 className="w-4 h-4" />
+            <span>GTAV</span>
+          </button>
+          <button
+            className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
+              activeTab === 'local' 
+                ? 'bg-primary-600/50 text-white border border-primary-500/30' 
+                : 'bg-base-800/50 text-gray-300 hover:bg-base-700/50 border border-base-700/30 hover:border-base-600/50'
+            }`}
+            onClick={() => setActiveTab('local')}
+          >
+            <HardDrive className="w-4 h-4" />
+            <span>Local</span>
+          </button>
+        </div>
+
+        {/* Селектор категорий для GTAV */}
+        {activeTab === 'gtav' && (
+          <div className="mb-4">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full py-2.5 px-4 bg-base-800/50 border border-base-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+            >
+              {gtavCategories.map(category => (
+                <option key={category} value={category}>
+                  {category} ({category === 'All' ? gtavWeapons.length : gtavWeapons.filter(w => w.category === category).length})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Поиск */}
+        <div className="space-y-2">
+          <div className="relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <Search className="w-4 h-4 text-gray-500" />
+            </div>
+            <input
+              type="text"
+              placeholder="Поиск по названию, модели, типу..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-10 py-2.5 bg-base-800/50 border border-base-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="text-xs text-gray-500">
+              Найдено: <span className="text-primary-400 font-medium">{filteredWeapons.length}</span> из {currentWeapons.length}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
+          <span className="ml-2 text-gray-400">Загрузка оружия...</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-red-400" />
+            <span className="text-red-400 text-sm">{error}</span>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="grid grid-cols-1 gap-3">
+          {filteredWeapons.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              {searchQuery ? `Ничего не найдено по запросу "${searchQuery}"` : 'Оружие не найдено'}
+            </div>
+          ) : (
+            filteredWeapons.map(weapon => {
+              const status = weaponStatuses.get(weapon.id) || 'not_downloaded'
+              const isDownloaded = status === 'downloaded'
+              const isChecking = status === 'checking'
+
+              const isActive = panelsVisible && selectedWeapon?.id === weapon.id
+              const isCurrentWeapon = currentWeapon && (currentWeapon.name === weapon.name || currentWeapon.id === weapon.id)
+              
+              return (
+                <div
+                  key={weapon.id}
+                  className={`relative p-4 rounded-lg border transition-colors cursor-pointer ${
+                    isActive
+                      ? 'border-purple-500/60 bg-purple-900/10'
+                      : 'bg-base-800 border-base-700 hover:bg-base-700'
+                  }`}
+                  onClick={() => {
+                    // Toggle panels visibility
+                    setPanelsVisible(v => {
+                      const same = selectedWeapon?.id === weapon.id
+                      const nextVisible = same ? !v : true
+                      setShowWeaponTuning(nextVisible)
+                      setShowWeaponMeta(nextVisible)
+                      setShowWeaponActions(nextVisible)
+                      return nextVisible
+                    })
+                    setSelectedWeapon(weapon)
+                  }}
+                >
+                  {isActive && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-fuchsia-500 rounded-l" />
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className={`text-sm font-medium flex items-center space-x-2 ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400' : 'text-white'}`}>
+                        {isCurrentWeapon && (
+                          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="У вас экипировано это оружие" />
+                        )}
+                        <span>{weapon.displayName || weapon.name}</span>
+                      </div>
+                      <div className="text-xs text-gray-400">{weapon.name}</div>
+                      {!('isGTAV' in weapon && weapon.isGTAV) && 'tags' in weapon && Array.isArray(weapon.tags) && weapon.tags.length > 0 && (
+                        <div className="flex space-x-1 mt-1">
+                          {weapon.tags.slice(0, 3).map((tag: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-1 py-0.5 bg-primary-900 text-primary-300 text-xs rounded"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {'isGTAV' in weapon && weapon.isGTAV && (
+                        <div className="flex space-x-1 mt-1">
+                          <span className="px-1 py-0.5 bg-blue-900 text-blue-300 text-xs rounded">
+                            {weapon.category}
+                          </span>
+                          <span className="px-1 py-0.5 bg-green-900 text-green-300 text-xs rounded">
+                            {weapon.damage} DMG
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-2">
+                        <HardDrive className="w-4 h-4 text-primary-400" />
+                        <span className="text-xs text-gray-500">
+                          {'isGTAV' in weapon && weapon.isGTAV ? 'GTA V' : 'size' in weapon && typeof weapon.size === 'number' ? `${(weapon.size / 1024 / 1024).toFixed(1)}MB` : 'N/A'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-1">
+                        {'isGTAV' in weapon && weapon.isGTAV ? (
+                          // Для GTAV оружия - только выдача
+                          <button
+                            onClick={() => handleGiveWeapon(weapon)}
+                            disabled={!isAvailable}
+                            className="p-2 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Выдать GTA V оружие"
+                          >
+                            <Zap className="w-4 h-4" />
+                          </button>
+                        ) : !isDownloaded ? (
+                          // Для HUB оружия - скачивание
+                          <button
+                            onClick={() => handleDownload(weapon as WeaponResource)}
+                            disabled={isChecking}
+                            className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Скачать оружие"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          // Для установленного HUB оружия - выдача и перезагрузка
+                          <>
+                            <button
+                              onClick={() => handleGiveWeapon(weapon)}
+                              disabled={!isAvailable || isChecking}
+                              className="p-2 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Выдать оружие"
+                            >
+                              <Zap className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleReload(weapon as WeaponResource)}
+                              disabled={isChecking}
+                              className="p-2 text-orange-400 hover:text-orange-300 hover:bg-orange-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Перезагрузить оружие"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        
+                        {isChecking && (
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
   </div>
 )
+            })
+          )}
+        </div>
+      )}
+
+      <div className="mt-6 p-4 bg-base-800 rounded-lg">
+        <div className="text-xs text-gray-400">
+          {isAvailable
+            ? '🎮 Подключено к ALT:V - оружие будет выдано в игре'
+            : '🌐 Работает в браузере - используется режим демонстрации'}
+        </div>
+      </div>
+      
+      {/* Right side panels (tuning + meta editor) in a portal */}
+      {panelsVisible && selectedWeapon && (
+        <Portal>
+          <div 
+            className="pointer-events-auto fixed top-16 bottom-4 right-6 z-[9999] flex flex-col space-y-3 transition-all duration-300" 
+            style={{ left: focusMode !== 'off' ? 24 : 'calc(420px + 24px)' }}
+          >
+            {/* Header over panels - адаптивный под количество блоков */}
+            {focusMode === 'off' && (showWeaponTuning || showWeaponMeta || showWeaponActions) && (
+              <div
+                className="rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
+                style={{ 
+                  width: (() => {
+                    const visiblePanels = [showWeaponTuning, showWeaponMeta, showWeaponActions].filter(Boolean).length
+                    return `calc(${visiblePanels * 620}px + ${(visiblePanels - 1) * 12}px)`
+                  })()
+                }}
+                title="Скрыть/показать панели"
+                onClick={() => {
+                  setPanelsVisible(v => {
+                    const newVisible = !v
+                    setShowWeaponTuning(newVisible)
+                    setShowWeaponMeta(newVisible)
+                    setShowWeaponActions(newVisible)
+                    return newVisible
+                  })
+                }}
+              >
+                <div className="w-8 h-8 rounded-lg bg-purple-600/30 ring-1 ring-purple-500/40 flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-purple-200" />
+                </div>
+                <div className="text-sm font-semibold truncate bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400">
+                  {selectedWeapon?.displayName || selectedWeapon?.name || 'Оружие'}
+                </div>
+              </div>
+            )}
+            
+            <div className="flex space-x-3 flex-1 overflow-hidden">
+              {/* Tuning sliders panel */}
+              {(focusMode === 'off' || focusMode === 'tuning') && showWeaponTuning && (
+                <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+                  <WeaponTuningSliders
+                    onChange={(param, value) => {
+                      updateWeaponParameter(param, value)
+                      // Update XML only if available
+                      if (weaponMetaXml) {
+                        const updated = updateWeaponXmlValue(weaponMetaXml, param, value)
+                        setWeaponMetaXml(updated)
+                      }
+                    }}
+                    onReset={resetWeaponParameters}
+                    onXmlPatch={(param, value) => {
+                      if (weaponMetaXml) {
+                        const updated = updateWeaponXmlValue(weaponMetaXml, param, value)
+                        setWeaponMetaXml(updated)
+                      }
+                    }}
+                    disabled={!currentWeapon || !selectedWeapon || currentWeapon.name !== selectedWeapon.name}
+                    initialValues={weaponMetaXml}
+                    weaponKey={selectedWeapon.name}
+                    currentXml={weaponMetaXml}
+                    onFocusModeToggle={() => setFocusMode(focusMode === 'tuning' ? 'off' : 'tuning')}
+                    focusMode={focusMode === 'tuning'}
+                  />
+                </div>
+              )}
+              
+              {/* Weapon.meta XML editor panel */}
+              {(focusMode === 'off' || focusMode === 'meta') && showWeaponMeta && (
+                <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+                  <WeaponMetaEditor 
+                    xml={weaponMetaXml} 
+                    onXmlChange={setWeaponMetaXml}
+                    onFocusModeToggle={() => setFocusMode(focusMode === 'meta' ? 'off' : 'meta')}
+                    focusMode={focusMode === 'meta'}
+                  />
+                </div>
+              )}
+              
+              {/* Weapon Actions panel */}
+              {(focusMode === 'off' || focusMode === 'actions') && showWeaponActions && selectedWeapon && (
+                <div 
+                  className={`${
+                    focusMode === 'actions' ? 'w-[400px]' : 'w-[620px]'
+                  } h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left transition-all duration-300`}
+                >
+                  <WeaponActions 
+                    disabled={!currentWeapon || !selectedWeapon || currentWeapon.name !== selectedWeapon.name}
+                    onAction={(action, data) => {
+                      console.log('[WeaponsPage] Weapon action:', action, data)
+                    }}
+                    onFocusModeToggle={() => setFocusMode(focusMode === 'actions' ? 'off' : 'actions')}
+                    focusMode={focusMode === 'actions'}
+                    weaponName={selectedWeapon?.name || selectedWeapon?.modelName}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </Portal>
+      )}
+    </div>
+  )
+}
 
 // Типы для меню
 interface MenuItem {
@@ -1076,6 +1743,21 @@ interface MenuItem {
 function App() {
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('dashboard')
+  
+  // Отправляем событие смены страницы в ALT:V клиент
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      try {
+        // @ts-ignore
+        if (typeof alt !== 'undefined' && typeof alt.emit === 'function') {
+          // @ts-ignore
+          alt.emit('page:changed', currentPage)
+        }
+      } catch (e) {
+        console.error('[App] Error emitting page change:', e)
+      }
+    }
+  }, [currentPage])
   const [, forceUpdate] = useState({})
   
   // Логируем информацию о пути при загрузке
@@ -1165,28 +1847,52 @@ function App() {
   // Конфигурация меню
   const menuItems: MenuItem[] = [
     {
+      id: 'favorites',
+      label: 'Избранное',
+      icon: Heart,
+      component: FavoritesPage,
+      enabled: true,
+      order: 1
+    },
+    {
       id: 'vehicles',
       label: 'Автомобили',
       icon: Car,
       component: VehiclesPage,
       enabled: true,
-      order: 1
+      order: 2
     },
     {
       id: 'interiors',
       label: 'Интерьеры',
       icon: MapPin,
-      component: InteriorPlaceholder,
-      enabled: false,
-      order: 2
+      component: InteriorsPage,
+      enabled: true,
+      order: 3
     },
     {
       id: 'weapons',
       label: 'Оружие',
       icon: Zap,
-      component: WeaponsPlaceholder,
-      enabled: false,
-      order: 3
+      component: WeaponsPage,
+      enabled: true, // WEAPONS ENABLED
+      order: 4
+    },
+    {
+      id: 'world',
+      label: 'Мир и Погода',
+      icon: Globe,
+      component: WorldPage,
+      enabled: true,
+      order: 5
+    },
+    {
+      id: 'character',
+      label: 'Персонаж',
+      icon: Users,
+      component: CharacterPage,
+      enabled: true,
+      order: 6
     }
   ].sort((a, b) => a.order - b.order)
 

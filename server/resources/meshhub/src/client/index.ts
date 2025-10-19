@@ -4,6 +4,7 @@ import * as alt from 'alt-client'
 import * as native from 'natives'
 import { WebViewManager } from './webview-manager'
 import { VehicleController } from './vehicle-controller'
+import { InteriorController } from './interior-controller'
 
 /**
  * Инициализация ресурса
@@ -16,6 +17,9 @@ alt.on('connectionComplete', () => {
   
   // Инициализируем Vehicle Controller
   VehicleController.initialize()
+  
+  // Инициализируем Interior Controller
+  InteriorController.initialize()
   
   alt.log('[MeshHub] ✅ Client initialization complete')
 })
@@ -66,6 +70,9 @@ alt.on('disconnect', () => {
   
   // Очищаем Vehicle Controller
   VehicleController.cleanup()
+  
+  // Очищаем Interior Controller
+  InteriorController.cleanup()
 })
 
 /**
