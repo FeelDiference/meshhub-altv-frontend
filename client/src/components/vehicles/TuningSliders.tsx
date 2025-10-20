@@ -1,6 +1,8 @@
 import React from 'react'
 import { RotateCcw, Save, HardDrive, Cloud, Maximize2, Minimize2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { uploadHandlingModification, type UploadStatus as UploadStatusType } from '@/services/uploadService'
+import UploadStatus from '@/components/UploadStatus'
 
 // Декларация для глобального alt в WebView
 declare global {
@@ -121,7 +123,7 @@ function parseHandlingXml(xml: string): Record<string, number> {
   return values
 }
 
-export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean }) {
+export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode, archiveId }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean; archiveId?: string }) {
   const [values, setValues] = React.useState<Record<string, number>>({})
   const [defaults, setDefaults] = React.useState<Record<string, number>>({})
   const lastVehicleKey = React.useRef<string | null>(null)
@@ -129,6 +131,8 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
   const [supportedParams, setSupportedParams] = React.useState<string[]>([])
   const [unsupportedParams, setUnsupportedParams] = React.useState<string[]>([])
   const hasShownRestoreToast = React.useRef<boolean>(false) // Флаг для показа toast только один раз
+  const [uploadStatus, setUploadStatus] = React.useState<UploadStatusType | null>(null)
+  const [isUploading, setIsUploading] = React.useState(false)
 
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
@@ -172,9 +176,24 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           }
         }
         
+        // Обработчик обновления handling после применения мода
+        const handleHandlingUpdated = (data: any) => {
+          console.log('[TuningSliders] 🔄 Received handling update after mod:', data)
+          if (data && data.newHandling) {
+            // Обновляем значения ползунков
+            setValues(prev => ({ ...prev, ...data.newHandling }))
+            
+            // Показываем уведомление
+            toast.success(`Параметры обновлены после применения мода`, {
+              duration: 2000,
+            })
+          }
+        }
+        
         // Регистрируем обработчики
         alt.on('handling:supported:response', handleCapabilities)
         alt.on('handling:current:response', handleCurrentValues)
+        alt.on('vehicle:handling:updated', handleHandlingUpdated)
         
         // Запрашиваем capabilities
         alt.emit('handling:supported:request')
@@ -188,6 +207,7 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           if (alt && typeof alt.off === 'function') {
             alt.off('handling:supported:response', handleCapabilities)
             alt.off('handling:current:response', handleCurrentValues)
+            alt.off('vehicle:handling:updated', handleHandlingUpdated)
           }
         }
       }
@@ -333,13 +353,50 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
     }
   }
 
-  const handleSaveRemote = () => {
-    // TODO: Реализовать сохранение на сервер
-    console.log('[TuningSliders] Save to remote (not implemented yet)')
-    toast('Сохранение на сервер будет доступно в следующей версии', {
-      icon: '🚀',
-      duration: 4000,
-    })
+  const handleSaveRemote = async () => {
+    if (!currentXml || !vehicleKey) {
+      console.warn('[TuningSliders] No XML to save')
+      toast.error('Нет данных для сохранения')
+      return
+    }
+
+    if (!archiveId) {
+      console.warn('[TuningSliders] No archiveId provided')
+      toast.error('Ошибка: ID архива не найден')
+      return
+    }
+
+    try {
+      setIsUploading(true)
+      
+      console.log('[TuningSliders] Uploading handling modification to server...', {
+        archiveId,
+        vehicleName: vehicleKey,
+        xmlLength: currentXml.length
+      })
+      
+      const response = await uploadHandlingModification({
+        archiveId: archiveId,
+        resourceName: vehicleKey,
+        modifiedContent: currentXml,
+        vehicleName: vehicleKey
+      })
+      
+      if (response.success && response.upload) {
+        setUploadStatus(response.upload)
+        toast.success('Изменения отправлены на модерацию! 🎉', {
+          duration: 5000
+        })
+        console.log('[TuningSliders] Upload successful:', response.upload.id)
+      } else {
+        throw new Error('Upload failed')
+      }
+    } catch (error) {
+      console.error('[TuningSliders] Upload failed:', error)
+      toast.error('Ошибка отправки на сервер. Попробуйте снова.')
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -410,14 +467,25 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           {/* Кнопка сохранения */}
           <button
             onClick={handleSave}
-            disabled={disabled}
+            disabled={disabled || isUploading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-primary-600 to-fuchsia-600 hover:from-primary-500 hover:to-fuchsia-500 text-white disabled:opacity-50 transition-all"
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>Сохранить</span>
+            <Save className={`w-3.5 h-3.5 ${isUploading ? 'animate-spin' : ''}`} />
+            <span>{isUploading ? 'Отправка...' : 'Сохранить'}</span>
           </button>
         </div>
       </div>
+
+      {/* Статус загрузки */}
+      {uploadStatus && (
+        <UploadStatus 
+          upload={uploadStatus} 
+          onRefresh={async () => {
+            // TODO: Реализовать обновление статуса
+            console.log('[TuningSliders] Refreshing upload status...')
+          }}
+        />
+      )}
 
       {/* Сетка слайдеров */}
       <div className="grid grid-cols-2 gap-4">

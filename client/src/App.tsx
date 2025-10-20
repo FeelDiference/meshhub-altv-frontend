@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users } from 'lucide-react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users, Clock, Pencil, Check, ChevronDown, ChevronRight, Loader } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
@@ -18,7 +18,7 @@ import { logAppPathInfo } from '@/utils/pathDetection'
 import { downloadVehicleWithStatus, reloadVehicle, type VehicleStatus } from '@/services/vehicleManager'
 import { getAccessToken } from '@/services/auth'
 import { getGTAVVehicles, getGTAVCategories, type GTAVVehicle } from '@/data/gtav-vehicles-with-categories'
-import { getWeapons } from '@/services/weapons'
+import { getWeaponArchives, getWeaponsInArchive } from '@/services/weapons'
 import type { WeaponResource } from '@/types/weapon'
 import { downloadWeaponToLocal, checkWeaponExists, type WeaponStatus } from '@/services/weaponManager'
 import { getGTAVWeapons, getGTAVWeaponCategories, type GTAVWeapon } from '@/data/gtav-weapons'
@@ -26,7 +26,6 @@ import WeaponTuningSliders from '@/components/weapons/WeaponTuningSliders'
 import WeaponMetaEditor from '@/components/weapons/WeaponMetaEditor'
 import { loadWeaponsMeta, parseWeaponsMeta, updateWeaponXmlValue, type WeaponsMetaIndex } from '@/services/weaponsMetaParser'
 import { InteriorsPage } from '@/components/interiors/InteriorsPage'
-import FavoritesPage from '@/components/favorites/FavoritesPage'
 import WorldPage from '@/components/world/WorldPage'
 import CharacterPage from '@/components/character/CharacterPage'
 
@@ -44,14 +43,426 @@ type AnyWeapon = WeaponResource | (GTAVWeapon & {
   modelName: string
 })
 
-const Dashboard = () => (
-  <div className="flex-1 p-6">
-    <div className="text-center">
-      <h1 className="text-2xl font-bold text-white mb-4">Добро пожаловать!</h1>
-      <p className="text-gray-400">Выберите модуль из меню слева</p>
+const Dashboard = () => {
+  const [favorites, setFavorites] = useState<{ weather: string[], time: string[], timeSpeed: number[] }>({
+    weather: [],
+    time: [],
+    timeSpeed: []
+  })
+  const [favoriteLocations, setFavoriteLocations] = useState<Array<{id: string, name: string, coords: {x: number, y: number, z: number}}>>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null)
+  const [editingLocationName, setEditingLocationName] = useState('')
+
+  // Загружаем избранные настройки при монтировании
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('world:favorites:load')
+        console.log(`[Dashboard] Requesting favorites from server`)
+      } catch (error) {
+        console.error(`[Dashboard] Error requesting favorites:`, error)
+      }
+    }
+    
+    // Загружаем избранные локации интерьеров из localStorage
+    try {
+      const stored = localStorage.getItem('interior_favorites')
+      const storedLocations = localStorage.getItem('interior_favorite_locations')
+      if (stored && storedLocations) {
+        const favoriteIds = JSON.parse(stored)
+        const locations = JSON.parse(storedLocations)
+        setFavoriteLocations(locations.filter((loc: any) => favoriteIds.includes(loc.id)))
+      }
+    } catch (e) {
+      console.warn('[Dashboard] Failed to load favorite locations:', e)
+    }
+  }, [])
+
+  // Обработчик получения избранных настроек
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handleFavoritesResponse = (data: any) => {
+        if (data.success && data.favorites) {
+          setFavorites(data.favorites)
+          setIsLoading(false)
+          console.log(`[Dashboard] Received favorites:`, data.favorites)
+        } else {
+          setIsLoading(false)
+          console.error(`[Dashboard] Failed to load favorites:`, data.error)
+        }
+      }
+      ;(window as any).alt.on('world:favorites:response', handleFavoritesResponse)
+      return () => {
+        ;(window as any).alt.off?.('world:favorites:response', handleFavoritesResponse)
+      }
+    }
+  }, [])
+
+  const hasFavorites = favorites.weather.length > 0 || favorites.time.length > 0 || favorites.timeSpeed.length > 0 || favoriteLocations.length > 0
+
+  // Функции для применения настроек
+  const applyWeather = (weather: string) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('world:weather:set', { weather })
+        toast.success(`Погода изменена на ${weather}`)
+        console.log(`[Dashboard] Applied weather: ${weather}`)
+      } catch (error) {
+        console.error(`[Dashboard] Error applying weather:`, error)
+        toast.error('Ошибка изменения погоды')
+      }
+    }
+  }
+
+  const applyTime = (time: string) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('world:time:set', { time })
+        toast.success(`Время изменено на ${time}`)
+        console.log(`[Dashboard] Applied time: ${time}`)
+      } catch (error) {
+        console.error(`[Dashboard] Error applying time:`, error)
+        toast.error('Ошибка изменения времени')
+      }
+    }
+  }
+
+  const applyTimeSpeed = (speed: number) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('world:time:speed', { speed })
+        toast.success(`Скорость времени: ${speed}x`)
+        console.log(`[Dashboard] Applied time speed: ${speed}x`)
+      } catch (error) {
+        console.error(`[Dashboard] Error applying time speed:`, error)
+        toast.error('Ошибка изменения скорости времени')
+      }
+    }
+  }
+
+  const teleportToLocation = (location: {id: string, name: string, coords: {x: number, y: number, z: number}}) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('meshhub:interior:teleport', {
+          interiorId: location.id,
+          archetypeName: location.name,
+          position: location.coords
+        })
+        toast.success(`Телепорт к ${location.name}`)
+        console.log(`[Dashboard] Teleported to: ${location.name}`)
+      } catch (error) {
+        console.error(`[Dashboard] Error teleporting:`, error)
+        toast.error('Ошибка телепортации')
+      }
+    }
+  }
+
+  const startEditingLocation = (location: {id: string, name: string, coords: {x: number, y: number, z: number}}, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingLocationId(location.id)
+    setEditingLocationName(location.name)
+  }
+
+  const saveLocationName = (locationId: string) => {
+    if (!editingLocationName.trim()) {
+      toast.error('Название не может быть пустым')
+      return
+    }
+
+    const updatedLocations = favoriteLocations.map(loc => 
+      loc.id === locationId 
+        ? { ...loc, name: editingLocationName.trim() }
+        : loc
+    )
+    
+    setFavoriteLocations(updatedLocations)
+    
+    // Сохраняем в localStorage
+    try {
+      localStorage.setItem('interior_favorite_locations', JSON.stringify(updatedLocations))
+      toast.success('Название изменено')
+      console.log(`[Dashboard] Location renamed: ${editingLocationName}`)
+    } catch (e) {
+      console.error('[Dashboard] Failed to save location name:', e)
+      toast.error('Ошибка сохранения')
+    }
+    
+    setEditingLocationId(null)
+    setEditingLocationName('')
+  }
+
+  const cancelEditingLocation = () => {
+    setEditingLocationId(null)
+    setEditingLocationName('')
+  }
+
+  return (
+    <div className="flex-1 p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white mb-2">Добро пожаловать!</h1>
+        <p className="text-gray-400">Выберите модуль из меню слева</p>
+      </div>
+      
+      {/* Секция Избранное */}
+      <div className="bg-base-800/50 rounded-lg p-4 border border-base-700">
+        <div className="flex items-center gap-2 mb-4">
+          <Heart className="w-5 h-5 text-red-400" />
+          <h2 className="text-lg font-semibold text-white">Избранное - Быстрые действия</h2>
+        </div>
+        
+        {isLoading ? (
+          <div className="flex items-center justify-center h-32 bg-base-700/30 rounded-lg border border-base-700/50">
+            <div className="text-center text-gray-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-2"></div>
+              <p className="text-sm">Загрузка избранного...</p>
+            </div>
+          </div>
+        ) : !hasFavorites ? (
+          <div className="flex items-center justify-center h-32 bg-base-700/30 rounded-lg border border-base-700/50">
+            <div className="text-center text-gray-500">
+              <Heart className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+              <p className="text-sm">Пока ничего нет в избранном.</p>
+              <p className="text-xs text-gray-600 mt-1">Добавляйте настройки погоды и времени в избранное для быстрого доступа.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Избранная погода */}
+            {favorites.weather.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
+                  <Cloud className="w-3.5 h-3.5 text-blue-400" />
+                  Погода:
+                </h3>
+                <div className="space-y-2">
+                  {favorites.weather.map(weather => (
+                    <div
+                      key={weather}
+                      onClick={() => applyWeather(weather)}
+                      className="w-full p-3 bg-base-700/50 border border-base-600 rounded-lg hover:bg-base-600/50 hover:border-blue-500/30 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center group-hover:bg-blue-600/30 transition-colors">
+                            <Cloud className="w-4 h-4 text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">
+                              {weather}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              Погодные условия
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-500 group-hover:text-blue-400 transition-colors">
+                            Применить
+                          </div>
+                          <div className="w-5 h-5 bg-blue-600/20 rounded flex items-center justify-center group-hover:bg-blue-600/30 transition-colors">
+                            <Cloud className="w-3 h-3 text-blue-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Избранное время */}
+            {favorites.time.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-yellow-400" />
+                  Время:
+                </h3>
+                <div className="space-y-2">
+                  {favorites.time.map(time => (
+                    <div
+                      key={time}
+                      onClick={() => applyTime(time)}
+                      className="w-full p-3 bg-base-700/50 border border-base-600 rounded-lg hover:bg-base-600/50 hover:border-yellow-500/30 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div className="w-8 h-8 bg-yellow-600/20 rounded-lg flex items-center justify-center group-hover:bg-yellow-600/30 transition-colors">
+                            <Clock className="w-4 h-4 text-yellow-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">
+                              {time}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              Время суток
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-500 group-hover:text-yellow-400 transition-colors">
+                            Применить
+                          </div>
+                          <div className="w-5 h-5 bg-yellow-600/20 rounded flex items-center justify-center group-hover:bg-yellow-600/30 transition-colors">
+                            <Clock className="w-3 h-3 text-yellow-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Избранная скорость времени */}
+            {favorites.timeSpeed.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-purple-400" />
+                  Скорость:
+                </h3>
+                <div className="space-y-2">
+                  {favorites.timeSpeed.map(speed => (
+                    <div
+                      key={speed}
+                      onClick={() => applyTimeSpeed(speed)}
+                      className="w-full p-3 bg-base-700/50 border border-base-600 rounded-lg hover:bg-base-600/50 hover:border-purple-500/30 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div className="w-8 h-8 bg-purple-600/20 rounded-lg flex items-center justify-center group-hover:bg-purple-600/30 transition-colors">
+                            <Clock className="w-4 h-4 text-purple-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">
+                              {speed}x
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              Скорость времени
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-500 group-hover:text-purple-400 transition-colors">
+                            Применить
+                          </div>
+                          <div className="w-5 h-5 bg-purple-600/20 rounded flex items-center justify-center group-hover:bg-purple-600/30 transition-colors">
+                            <Clock className="w-3 h-3 text-purple-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Избранные локации интерьеров */}
+            {favoriteLocations.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-green-400" />
+                  Локации:
+                </h3>
+                <div className="space-y-2">
+                  {favoriteLocations.map(location => {
+                    const isEditing = editingLocationId === location.id
+                    
+                    return (
+                      <div
+                        key={location.id}
+                        onClick={() => !isEditing && teleportToLocation(location)}
+                        className={`w-full p-3 bg-base-700/50 border border-base-600 rounded-lg transition-all duration-200 group ${
+                          !isEditing ? 'hover:bg-base-600/50 hover:border-green-500/30 cursor-pointer' : 'border-blue-500/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            <div className="w-8 h-8 bg-green-600/20 rounded-lg flex items-center justify-center group-hover:bg-green-600/30 transition-colors">
+                              <MapPin className="w-4 h-4 text-green-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editingLocationName}
+                                  onChange={(e) => setEditingLocationName(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      saveLocationName(location.id)
+                                    } else if (e.key === 'Escape') {
+                                      cancelEditingLocation()
+                                    }
+                                  }}
+                                  className="w-full px-2 py-1 bg-base-900 border border-blue-500 rounded text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  autoFocus
+                                />
+                              ) : (
+                                <div className="text-sm font-medium text-white truncate">
+                                  {location.name}
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-400 mt-0.5">
+                                X: {location.coords.x.toFixed(1)}, Y: {location.coords.y.toFixed(1)}, Z: {location.coords.z.toFixed(1)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    saveLocationName(location.id)
+                                  }}
+                                  className="p-1.5 rounded hover:bg-green-600/20 text-green-400 transition-colors"
+                                  title="Сохранить"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    cancelEditingLocation()
+                                  }}
+                                  className="p-1.5 rounded hover:bg-red-600/20 text-red-400 transition-colors"
+                                  title="Отмена"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={(e) => startEditingLocation(location, e)}
+                                  className="p-1.5 rounded hover:bg-blue-600/20 text-gray-400 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100"
+                                  title="Переименовать"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <div className="text-xs text-gray-500 group-hover:text-green-400 transition-colors">
+                                  Телепорт
+                                </div>
+                                <div className="w-5 h-5 bg-green-600/20 rounded flex items-center justify-center group-hover:bg-green-600/30 transition-colors">
+                                  <MapPin className="w-3 h-3 text-green-400" />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-)
+  )
+}
 
 const VehiclesPage = () => {
   
@@ -1031,6 +1442,7 @@ const VehiclesPage = () => {
                 currentXml={handlingMetaXml}
                 onFocusModeToggle={() => setFocusMode(focusMode === 'tuning' ? 'off' : 'tuning')}
                 focusMode={focusMode === 'tuning'}
+                archiveId={selectedVehicle.id}
               />
             </div>
           )}
@@ -1077,10 +1489,68 @@ const WeaponsPage = () => {
   const [activeTab, setActiveTab] = useState<'hub' | 'gtav' | 'local'>('hub')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [expandedArchives, setExpandedArchives] = useState<Set<string>>(new Set())
+  const [loadingArchives, setLoadingArchives] = useState<Set<string>>(new Set())
   
   // GTAV оружие загружается локально
   const [gtavWeapons] = useState<GTAVWeapon[]>(() => getGTAVWeapons())
   const [gtavCategories] = useState<string[]>(() => ['All', ...getGTAVWeaponCategories()])
+
+  // Load weapons from archive
+  const loadWeaponsFromArchive = async (archiveId: string) => {
+    if (loadingArchives.has(archiveId)) return
+    
+    setLoadingArchives(prev => new Set(prev).add(archiveId))
+    
+    try {
+      const weaponsInArchive = await getWeaponsInArchive(archiveId)
+      
+      setWeapons(prev => prev.map(weapon => {
+        if (weapon.id === archiveId) {
+          return {
+            ...weapon,
+            children: weaponsInArchive
+          }
+        }
+        return weapon
+      }))
+      
+      // Check installation status for each weapon in archive
+      const statuses = new Map<string, WeaponStatus>()
+      for (const weapon of weaponsInArchive) {
+        const isInstalled = await checkWeaponExists(weapon)
+        statuses.set(weapon.id, isInstalled ? 'downloaded' : 'not_downloaded')
+      }
+      setWeaponStatuses(prev => new Map([...prev, ...statuses]))
+      
+    } catch (error) {
+      console.error('Failed to load weapons from archive:', error)
+    } finally {
+      setLoadingArchives(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(archiveId)
+        return newSet
+      })
+    }
+  }
+
+  // Toggle archive expansion
+  const toggleArchive = async (archiveId: string) => {
+    const newExpanded = new Set(expandedArchives)
+    
+    if (newExpanded.has(archiveId)) {
+      newExpanded.delete(archiveId)
+    } else {
+      newExpanded.add(archiveId)
+      // Load weapons if not already loaded
+      const archive = weapons.find(w => w.id === archiveId)
+      if (archive && (!archive.children || archive.children.length === 0)) {
+        await loadWeaponsFromArchive(archiveId)
+      }
+    }
+    
+    setExpandedArchives(newExpanded)
+  }
   
   // Local оружие пользователя
   const [localWeapons] = useState<AnyWeapon[]>([])
@@ -1142,8 +1612,14 @@ const WeaponsPage = () => {
         setLoading(true)
         setError(null)
         
-        const loadedWeapons = await getWeapons()
-        setWeapons(loadedWeapons)
+        const loadedWeapons = await getWeaponArchives()
+        // Mark archives as expandable
+        const archivesWithMetadata = loadedWeapons.map((weapon: any) => ({
+          ...weapon,
+          isArchive: true,
+          children: []
+        }))
+        setWeapons(archivesWithMetadata)
         
         // Check installation status for each weapon
         const statuses = new Map<string, WeaponStatus>()
@@ -1372,10 +1848,10 @@ const WeaponsPage = () => {
     })
 
   return (
-  <div className="flex-1 p-6">
+    <div className="flex-1 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white mb-2">Оружие</h1>
-        <div className="flex items-center space-x-2 text-sm">
+        <div className="flex items-center space-x-2 text-sm mb-4">
           <div className={`px-2 py-1 rounded-full text-xs ${isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'}`}>
             {isAvailable ? '🎮 ALT:V' : '🌐 Browser'}
           </div>
@@ -1488,11 +1964,123 @@ const WeaponsPage = () => {
               {searchQuery ? `Ничего не найдено по запросу "${searchQuery}"` : 'Оружие не найдено'}
             </div>
           ) : (
-            filteredWeapons.map(weapon => {
+            filteredWeapons.map((weapon: any) => {
+              // Render archive with expandable children
+              if (weapon.isArchive) {
+                const isExpanded = expandedArchives.has(weapon.id)
+                const isLoading = loadingArchives.has(weapon.id)
+                
+                return (
+                  <div key={weapon.id} className="bg-base-800 border border-base-700 rounded-lg">
+                    {/* Archive header */}
+                    <div
+                      className="p-4 cursor-pointer hover:bg-base-700 transition-colors"
+                      onClick={() => toggleArchive(weapon.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          {isLoading ? (
+                            <Loader className="w-4 h-4 animate-spin text-primary-400" />
+                          ) : isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-primary-400" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-primary-400" />
+                          )}
+                          <div>
+                            <div className="text-sm font-medium text-white">
+                              {weapon.displayName || weapon.name}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              Архив • {isExpanded ? (weapon.children?.length || 0) : '...'} оружий
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <div className="flex items-center space-x-2">
+                            <HardDrive className="w-4 h-4 text-primary-400" />
+                            <span className="text-xs text-gray-500">
+                              {weapon.size ? `${(weapon.size / 1024 / 1024).toFixed(1)}MB` : 'N/A'}
+                            </span>
+                          </div>
+                          
+                          {/* Кнопка скачивания архива */}
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDownload(weapon as WeaponResource)
+                              }}
+                              disabled={isLoading}
+                              className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Скачать архив оружий"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Archive children */}
+                    {isExpanded && weapon.children && (
+                      <div className="border-t border-base-700 bg-base-900/50">
+                        {weapon.children.map((childWeapon: any) => {
+                          const isActive = panelsVisible && selectedWeapon?.id === childWeapon.id
+                          const isCurrentWeapon = currentWeapon && (currentWeapon.name === childWeapon.name || currentWeapon.id === childWeapon.id)
+                          
+                          return (
+                            <div
+                              key={childWeapon.id}
+                              className={`relative p-4 ml-4 border-l-2 border-base-600 hover:bg-base-800 transition-colors cursor-pointer ${
+                                isActive ? 'border-l-purple-500 bg-purple-900/10' : ''
+                              }`}
+                              onClick={() => {
+                                setPanelsVisible(v => {
+                                  const same = selectedWeapon?.id === childWeapon.id
+                                  const nextVisible = same ? !v : true
+                                  setShowWeaponTuning(nextVisible)
+                                  setShowWeaponMeta(nextVisible)
+                                  setShowWeaponActions(nextVisible)
+                                  return nextVisible
+                                })
+                                setSelectedWeapon(childWeapon)
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className={`text-sm font-medium flex items-center space-x-2 ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400' : 'text-white'}`}>
+                                    {isCurrentWeapon && (
+                                      <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="У вас экипировано это оружие" />
+                                    )}
+                                    <span>{childWeapon.displayName || childWeapon.name}</span>
+                                  </div>
+                                  <div className="text-xs text-gray-400">{childWeapon.name}</div>
+                                </div>
+
+                                <div className="flex items-center space-x-3">
+                                  {/* Убираем размер для оружий внутри архива */}
+
+                                  <div className="flex items-center space-x-1">
+                                    {/* Оружия внутри архива нельзя скачивать по отдельности */}
+                                    <span className="text-xs text-gray-500 px-2 py-1 bg-gray-800 rounded">
+                                      В архиве
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+              
+              // Render regular weapon (fallback for non-archive weapons)
               const status = weaponStatuses.get(weapon.id) || 'not_downloaded'
               const isDownloaded = status === 'downloaded'
               const isChecking = status === 'checking'
-
               const isActive = panelsVisible && selectedWeapon?.id === weapon.id
               const isCurrentWeapon = currentWeapon && (currentWeapon.name === weapon.name || currentWeapon.id === weapon.id)
               
@@ -1847,20 +2435,12 @@ function App() {
   // Конфигурация меню
   const menuItems: MenuItem[] = [
     {
-      id: 'favorites',
-      label: 'Избранное',
-      icon: Heart,
-      component: FavoritesPage,
-      enabled: true,
-      order: 1
-    },
-    {
       id: 'vehicles',
       label: 'Автомобили',
       icon: Car,
       component: VehiclesPage,
       enabled: true,
-      order: 2
+      order: 1
     },
     {
       id: 'interiors',
@@ -1868,7 +2448,7 @@ function App() {
       icon: MapPin,
       component: InteriorsPage,
       enabled: true,
-      order: 3
+      order: 2
     },
     {
       id: 'weapons',
@@ -1876,7 +2456,7 @@ function App() {
       icon: Zap,
       component: WeaponsPage,
       enabled: true, // WEAPONS ENABLED
-      order: 4
+      order: 3
     },
     {
       id: 'world',
@@ -1884,7 +2464,7 @@ function App() {
       icon: Globe,
       component: WorldPage,
       enabled: true,
-      order: 5
+      order: 4
     },
     {
       id: 'character',
@@ -1892,7 +2472,7 @@ function App() {
       icon: Users,
       component: CharacterPage,
       enabled: true,
-      order: 6
+      order: 5
     }
   ].sort((a, b) => a.order - b.order)
 
