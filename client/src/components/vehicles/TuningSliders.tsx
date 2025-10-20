@@ -354,6 +354,71 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
     }
   }
 
+  // Обработчик уведомления об одобрении загрузки
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handleUploadApproved = (data: any) => {
+        console.log('[TuningSliders] 🎉 Upload approved:', data)
+        
+        if (data.success && data.uploadId === uploadStatus?.id) {
+          // Обновляем статус загрузки
+          setUploadStatus(prev => prev ? {
+            ...prev,
+            status: 'approved',
+            approved: true
+          } : null)
+          
+          // Показываем успешное уведомление
+          toast.success(data.message || 'Ваша загрузка была одобрена! 🎉', {
+            duration: 8000
+          })
+          
+          // Автоматически скрываем уведомление через 5 секунд
+          setTimeout(() => {
+            setUploadStatus(null)
+          }, 5000)
+        }
+      }
+      
+      ;(window as any).alt.on('meshhub:upload:approved', handleUploadApproved)
+      
+      return () => {
+        ;(window as any).alt.off('meshhub:upload:approved', handleUploadApproved)
+      }
+    }
+  }, [uploadStatus?.id])
+
+  // Функция обновления статуса загрузки
+  const handleRefreshUploadStatus = async () => {
+    if (!uploadStatus?.id) return
+    
+    try {
+      console.log('[TuningSliders] Refreshing upload status for:', uploadStatus.id)
+      
+      // Импортируем функцию получения статуса
+      const { getUploadStatus } = await import('@/services/uploadService')
+      const updatedStatus = await getUploadStatus(uploadStatus.id)
+      
+      console.log('[TuningSliders] Updated status:', updatedStatus)
+      setUploadStatus(updatedStatus)
+      
+      // Если статус изменился на одобренный, показываем уведомление
+      if (updatedStatus.status === 'approved' || updatedStatus.status === 'completed') {
+        toast.success('Ваша загрузка была одобрена! 🎉', {
+          duration: 5000
+        })
+        
+        // Автоматически скрываем через 3 секунды
+        setTimeout(() => {
+          setUploadStatus(null)
+        }, 3000)
+      }
+    } catch (error) {
+      console.error('[TuningSliders] Failed to refresh upload status:', error)
+      toast.error('Ошибка обновления статуса')
+    }
+  }
+
   const handleSaveRemote = async () => {
     if (!currentXml || !vehicleKey) {
       console.warn('[TuningSliders] No XML to save')
@@ -526,10 +591,7 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       {uploadStatus && (
         <UploadStatus 
           upload={uploadStatus} 
-          onRefresh={async () => {
-            // TODO: Реализовать обновление статуса
-            console.log('[TuningSliders] Refreshing upload status...')
-          }}
+          onRefresh={handleRefreshUploadStatus}
         />
       )}
 
