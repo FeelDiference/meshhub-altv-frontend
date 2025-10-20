@@ -1,7 +1,7 @@
 import React from 'react'
 import { RotateCcw, Save, HardDrive, Cloud, Maximize2, Minimize2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { uploadHandlingModification, type UploadStatus as UploadStatusType } from '@/services/uploadService'
+import type { UploadStatus as UploadStatusType } from '@/services/uploadService'
 import UploadStatus from '@/components/UploadStatus'
 
 // Декларация для глобального alt в WebView
@@ -366,47 +366,75 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       return
     }
 
+    // Проверяем что мы в ALT:V WebView
+    if (typeof window === 'undefined' || !('alt' in window)) {
+      console.error('[TuningSliders] Not in ALT:V WebView, cannot upload to server')
+      toast.error('Сохранение на сервер доступно только в игре')
+      return
+    }
+
     try {
       setIsUploading(true)
       
-      console.log('[TuningSliders] Uploading handling modification to server...', {
+      console.log('[TuningSliders] Uploading handling modification to server via ALT:V...', {
         archiveId,
         vehicleName: vehicleKey,
         xmlLength: currentXml.length
       })
       
-      const response = await uploadHandlingModification({
-        archiveId: archiveId,
-        resourceName: vehicleKey,
-        modifiedContent: currentXml,
-        vehicleName: vehicleKey
+      // Получаем токен
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        throw new Error('Токен авторизации не найден')
+      }
+      
+      // Создаем Promise для ожидания ответа от сервера
+      const uploadPromise = new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Таймаут ожидания ответа от сервера'))
+        }, 30000) // 30 секунд
+        
+        // Слушаем ответ от сервера
+        const handleResponse = (response: any) => {
+          clearTimeout(timeout)
+          ;(window as any).alt.off('meshhub:vehicle:upload:response', handleResponse)
+          
+          if (response.success) {
+            resolve(response)
+          } else {
+            reject(new Error(response.error || 'Upload failed'))
+          }
+        }
+        
+        ;(window as any).alt.on('meshhub:vehicle:upload:response', handleResponse)
       })
       
-      if (response.success && response.upload) {
+      // Отправляем событие на сервер
+      ;(window as any).alt.emit('meshhub:vehicle:upload:handling', {
+        archiveId,
+        resourceName: vehicleKey,
+        modifiedContent: currentXml,
+        token
+      })
+      
+      console.log('[TuningSliders] Event sent, waiting for server response...')
+      
+      // Ждем ответа
+      const response = await uploadPromise
+      
+      if (response.upload) {
         setUploadStatus(response.upload)
         toast.success('Изменения отправлены на модерацию! 🎉', {
           duration: 5000
         })
         console.log('[TuningSliders] Upload successful:', response.upload.id)
-      } else {
-        throw new Error('Upload failed')
       }
+      
     } catch (error: any) {
       console.error('[TuningSliders] Upload failed:', error)
-      console.error('[TuningSliders] Error details:', {
-        message: error?.message,
-        response: error?.response?.data,
-        status: error?.response?.status,
-        statusText: error?.response?.statusText
-      })
+      console.error('[TuningSliders] Error message:', error?.message)
       
-      // Показываем детальную ошибку
-      const errorMessage = error?.response?.data?.error 
-        || error?.response?.data?.message 
-        || error?.message 
-        || 'Неизвестная ошибка'
-      
-      toast.error(`Ошибка отправки: ${errorMessage}`, {
+      toast.error(`Ошибка отправки: ${error.message || 'Неизвестная ошибка'}`, {
         duration: 10000
       })
     } finally {
