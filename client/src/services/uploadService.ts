@@ -45,6 +45,13 @@ export async function uploadHandlingModification(data: {
   modifiedContent: string
   vehicleName: string
 }): Promise<UploadResponse> {
+  console.log('[uploadService] Starting upload...', {
+    archiveId: data.archiveId,
+    resourceName: data.resourceName,
+    vehicleName: data.vehicleName,
+    contentLength: data.modifiedContent.length
+  })
+  
   const formData = new FormData()
   
   // Создаем Blob из XML контента
@@ -57,20 +64,33 @@ export async function uploadHandlingModification(data: {
   formData.append('archive_id', data.archiveId)
   formData.append('modified_content', data.modifiedContent)
   
-  const response = await api.post('/api/uploads', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
+  console.log('[uploadService] FormData prepared, sending POST /upload...')
   
-  return response.data
+  try {
+    const response = await api.post('/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    
+    console.log('[uploadService] Upload successful:', response.data)
+    return response.data
+  } catch (error: any) {
+    console.error('[uploadService] Upload failed:', {
+      message: error?.message,
+      status: error?.response?.status,
+      statusText: error?.response?.statusText,
+      data: error?.response?.data
+    })
+    throw error
+  }
 }
 
 /**
  * Получить статус загрузки по ID
  */
 export async function getUploadStatus(uploadId: string): Promise<UploadStatus> {
-  const response = await api.get(`/api/uploads/${uploadId}`)
+  const response = await api.get(`/rpf/uploads/${uploadId}`)
   return response.data
 }
 
@@ -78,7 +98,7 @@ export async function getUploadStatus(uploadId: string): Promise<UploadStatus> {
  * Получить все загрузки текущего пользователя
  */
 export async function getUserUploads(userId: string, page = 1, pageSize = 20): Promise<UserUpload> {
-  const response = await api.get(`/api/uploads/user/${userId}`, {
+  const response = await api.get(`/rpf/uploads/user/${userId}`, {
     params: { page, page_size: pageSize }
   })
   return response.data
@@ -88,7 +108,7 @@ export async function getUserUploads(userId: string, page = 1, pageSize = 20): P
  * Одобрить загрузку (только для администраторов)
  */
 export async function approveUpload(uploadId: string, targetPath: string, createBackup = true): Promise<void> {
-  await api.post(`/api/uploads/${uploadId}/approve`, {
+  await api.post(`/rpf/uploads/${uploadId}/approve`, {
     approved: true,
     target_path: targetPath,
     create_backup: createBackup
@@ -99,7 +119,7 @@ export async function approveUpload(uploadId: string, targetPath: string, create
  * Отклонить загрузку (только для администраторов)
  */
 export async function rejectUpload(uploadId: string, reason: string): Promise<void> {
-  await api.post(`/api/uploads/${uploadId}/reject`, {
+  await api.post(`/rpf/uploads/${uploadId}/reject`, {
     reason
   })
 }

@@ -391,9 +391,24 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       } else {
         throw new Error('Upload failed')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[TuningSliders] Upload failed:', error)
-      toast.error('Ошибка отправки на сервер. Попробуйте снова.')
+      console.error('[TuningSliders] Error details:', {
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        statusText: error?.response?.statusText
+      })
+      
+      // Показываем детальную ошибку
+      const errorMessage = error?.response?.data?.error 
+        || error?.response?.data?.message 
+        || error?.message 
+        || 'Неизвестная ошибка'
+      
+      toast.error(`Ошибка отправки: ${errorMessage}`, {
+        duration: 10000
+      })
     } finally {
       setIsUploading(false)
     }
