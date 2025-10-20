@@ -128,7 +128,7 @@ const UploadStatus: React.FC<UploadStatusProps> = ({ upload, onRefresh }) => {
           </div>
         </div>
         
-        {onRefresh && (
+        {onRefresh && upload.status !== 'approved' && upload.status !== 'completed' && upload.status !== 'rejected' && (
           <button
             onClick={onRefresh}
             className="px-2 py-1 text-xs rounded bg-base-800 hover:bg-base-700 text-gray-300 transition-all"
