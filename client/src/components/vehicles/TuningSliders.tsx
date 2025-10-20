@@ -3,6 +3,7 @@ import { RotateCcw, Save, HardDrive, Cloud, Maximize2, Minimize2 } from 'lucide-
 import toast from 'react-hot-toast'
 import type { UploadStatus as UploadStatusType } from '@/services/uploadService'
 import UploadStatus from '@/components/UploadStatus'
+import { getAccessToken } from '@/services/auth'
 
 // Декларация для глобального alt в WebView
 declare global {
@@ -383,10 +384,12 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       })
       
       // Получаем токен
-      const token = localStorage.getItem('access_token')
+      const token = getAccessToken()
       if (!token) {
-        throw new Error('Токен авторизации не найден')
+        throw new Error('Токен авторизации не найден. Пожалуйста, войдите в систему.')
       }
+      
+      console.log('[TuningSliders] Token found, length:', token.length)
       
       // Создаем Promise для ожидания ответа от сервера
       const uploadPromise = new Promise<any>((resolve, reject) => {
