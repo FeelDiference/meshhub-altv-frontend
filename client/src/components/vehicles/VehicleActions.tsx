@@ -20,7 +20,8 @@ import {
   Unlock,
   Gauge,
   Star,
-  MapPin
+  MapPin,
+  Box
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import VehicleTuning from './VehicleTuning'
@@ -31,9 +32,10 @@ interface VehicleActionsProps {
   onFocusModeToggle?: () => void
   focusMode?: boolean
   vehicleName?: string
+  onYftViewerToggle?: (show: boolean) => void // Callback для открытия YFT Viewer в полноэкранном режиме
 }
 
-const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAction, onFocusModeToggle, focusMode = false, vehicleName }) => {
+const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAction, onFocusModeToggle, focusMode = false, vehicleName, onYftViewerToggle }) => {
   const [showTuning, setShowTuning] = useState(false)
   const [favorites, setFavorites] = useState<string[]>([])
   
@@ -88,6 +90,20 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
   
   const handleAction = (action: string, data?: any) => {
     console.log(`[VehicleActions] Action triggered: ${action}`)
+    
+    // Специальная обработка для YFT Viewer - открываем в полноэкранном режиме
+    if (action === 'yft_viewer') {
+      console.log(`[VehicleActions] Opening YFT Viewer for vehicle: ${vehicleName}`)
+      if (!vehicleName) {
+        toast.error('Не выбран автомобиль')
+        return
+      }
+      // Вызываем callback для открытия на уровне App (полноэкранный режим)
+      if (onYftViewerToggle) {
+        onYftViewerToggle(true)
+      }
+      return
+    }
     
     // Специальная обработка для спидометра - отправляем событие в Alt:V
     if (action === 'speedometer_toggle') {
@@ -219,7 +235,8 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       title: 'Тестирование',
       icon: <MapPin className="w-4 h-4" />,
       actions: [
-        { id: 'teleport_to_location', label: 'Телепорт на локацию', icon: <MapPin className="w-4 h-4" />, color: 'text-purple-400' }
+        { id: 'teleport_to_location', label: 'Телепорт на локацию', icon: <MapPin className="w-4 h-4" />, color: 'text-purple-400' },
+        { id: 'yft_viewer', label: 'YFT Viewer (3D)', icon: <Box className="w-4 h-4" />, color: 'text-cyan-400' }
       ]
     }
   ]

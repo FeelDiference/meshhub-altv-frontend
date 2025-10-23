@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
 import HandlingMetaEditor from '@/components/vehicles/HandlingMetaEditor'
 import VehicleActions from '@/components/vehicles/VehicleActions'
+import YftViewer from '@/components/vehicles/YftViewer'
 import WeaponActions from '@/components/weapons/WeaponActions'
 import Portal from '@/components/common/Portal'
 import { fetchHandlingMeta } from '@/services/rpf'
@@ -759,6 +760,7 @@ const VehiclesPage = () => {
   const [showActions, setShowActions] = useState(false)
   const [focusMode, setFocusMode] = useState<'off' | 'tuning' | 'actions'>('off') // Режим фокуса: выкл / на параметры / на действия
   const [userManuallyCollapsed, setUserManuallyCollapsed] = useState(false) // Отслеживание ручного сворачивания панелей
+  const [showYftViewer, setShowYftViewer] = useState(false) // YFT 3D Viewer в полноэкранном режиме
   const panelLeft = 420 // сдвиг от левого края (примерно ширина меню + отступ)
   const [activeModel] = useState<string>('')
   const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
@@ -1741,6 +1743,18 @@ const VehiclesPage = () => {
               </div>
             </div>
           )}
+          {/* YFT Viewer занимает всё пространство (1884px) */}
+          {showYftViewer && selectedVehicle && (selectedVehicle.name || selectedVehicle.modelName) && (
+            <div className="w-[1884px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg animate-slide-in-left">
+              <YftViewer 
+                vehicleName={selectedVehicle.name || selectedVehicle.modelName!} 
+                onClose={() => setShowYftViewer(false)} 
+              />
+            </div>
+          )}
+          
+          {/* Панели тюнинга, мета и действий (скрываются когда открыт YFT Viewer) */}
+          {!showYftViewer && (
           <div className="flex space-x-3 flex-1 overflow-hidden">
             {(focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && (
               (vehicleStatuses.get(selectedVehicle.id) as string) === 'downloaded' || 
@@ -1777,7 +1791,7 @@ const VehiclesPage = () => {
               </div>
           )}
           {/* Handling.meta editor panel */}
-          {focusMode === 'off' && showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle) && (
+          {!showYftViewer && focusMode === 'off' && showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle) && (
             <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-2">handling.meta</div>
               <HandlingMetaEditor 
@@ -1789,7 +1803,7 @@ const VehiclesPage = () => {
           )}
           
           {/* Vehicle actions panel - показывать если фокус выкл или фокус на действиях */}
-          {(focusMode === 'off' || focusMode === 'actions') && showActions && selectedVehicle && (
+          {!showYftViewer && (focusMode === 'off' || focusMode === 'actions') && showActions && selectedVehicle && (
             <div 
               className={`${
                 focusMode === 'actions' ? 'w-[400px]' : 'w-[620px]'
@@ -1803,10 +1817,12 @@ const VehiclesPage = () => {
                 onFocusModeToggle={() => setFocusMode(focusMode === 'actions' ? 'off' : 'actions')}
                 focusMode={focusMode === 'actions'}
                 vehicleName={selectedVehicle?.name || selectedVehicle?.modelName}
+                onYftViewerToggle={(show) => setShowYftViewer(show)}
               />
             </div>
           )}
           </div>
+          )}
         </div>
         </Portal>
       )}

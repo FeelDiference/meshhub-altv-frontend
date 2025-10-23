@@ -14,7 +14,7 @@ export const ALTV_CONFIG: ALTVConfig = {
   },
   
   // Дебаг режим (включен в development)
-  debug: process.env.NODE_ENV === 'development',
+  debug: typeof window !== 'undefined' && window.location.hostname === 'localhost',
 }
 
 // Параметры handling для валидации

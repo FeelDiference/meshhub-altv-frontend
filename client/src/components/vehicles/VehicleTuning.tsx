@@ -129,28 +129,6 @@ const vehicleTuningCache = new Map<string, { checked: boolean, availableCategori
 
 // Максимальное количество одновременных запросов
 const MAX_CONCURRENT_REQUESTS = 3
-let currentRequests = 0
-
-// Функция для определения ванильной машины
-const isVanillaVehicleCheck = (vehicleName: string): boolean => {
-  if (!vehicleName) return true // Если нет имени, считаем ванильной
-
-  // Проверяем кеш сначала
-  if (vehicleTuningCache.has(vehicleName)) {
-    return vehicleTuningCache.get(vehicleName)!.checked
-  }
-
-  // Список префиксов для кастомных машин (из лога видно baze_* машины)
-  const customPrefixes = ['baze_', 'custom_', 'mod_']
-
-  // Проверяем, начинается ли имя с кастомного префикса
-  const isVanilla = !customPrefixes.some(prefix => vehicleName.toLowerCase().startsWith(prefix))
-
-  // Сохраняем в кеш
-  vehicleTuningCache.set(vehicleName, { checked: isVanilla, availableCategories: [] })
-
-  return isVanilla
-}
 
 // Стандартные машины GTA5 (из GTAV vehicles sync)
 const VANILLA_VEHICLES = new Set([
@@ -236,6 +214,7 @@ const VANILLA_VEHICLES = new Set([
   'youga3', 'youga4', 'z190', 'zentorno', 'zombiea', 'zombieb', 'zorrusso', 'zr380', 'zr3802', 'zr3803'
 ])
 
+// Функция для определения ванильной машины (вторая версия - по списку)
 const isVanillaVehicleCheck = (vehicleName: string): boolean => {
   if (!vehicleName) return true // Если нет имени, считаем ванильной
 
@@ -607,7 +586,7 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
       setCategoryNames({})
 
       // Определяем, является ли машина ванильной (стандартной GTA5)
-      const isVanillaVehicle = isVanillaVehicleCheck(vehicleName)
+      const isVanillaVehicle = isVanillaVehicleCheck(vehicleName || '')
 
       if (isVanillaVehicle) {
         // Для ванильных машин проверяем только стандартные категории, чтобы избежать крашей
