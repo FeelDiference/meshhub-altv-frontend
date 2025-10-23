@@ -11,12 +11,31 @@ export interface InteriorState {
 
 const interiorStates = new Map<string, InteriorState>()
 const LOCAL_STORAGE_KEY = 'installedInteriors'
+const INSTALLED_CACHE_STORAGE_KEY = 'installedInteriorsCacheV1'
+const INSTALLED_CACHE_TTL_MS = 60_000 // 1 минута кэша достаточно для UI
+
+type InstalledCache = { ids: string[]; ts: number }
+
+let installedCache: InstalledCache | null = null
+
+// Инициализируем кэш из localStorage, если валиден
+try {
+  const raw = localStorage.getItem(INSTALLED_CACHE_STORAGE_KEY)
+  if (raw) {
+    const parsed: InstalledCache = JSON.parse(raw)
+    if (parsed && Array.isArray(parsed.ids) && typeof parsed.ts === 'number') {
+      if (Date.now() - parsed.ts < INSTALLED_CACHE_TTL_MS) {
+        installedCache = parsed
+      }
+    }
+  }
+} catch {}
 
 /**
  * Проверить, установлен ли интерьер
  */
 export async function checkInteriorExists(interior: InteriorResource): Promise<boolean> {
-  console.log(`🔍 Проверяем установку интерьера: ${interior.name}`)
+  console.log(`🔍 Проверяем установку интерьера: ${(interior as any).display_name || interior.name}`)
   
   // Если ALT:V недоступен, проверяем localStorage
   if (!window.alt) {
@@ -49,7 +68,7 @@ export async function checkInteriorExists(interior: InteriorResource): Promise<b
     window.alt?.on?.('meshhub:interior:check:response', handler)
     window.alt?.emit?.('meshhub:interior:check', {
       interiorId: interior.id,
-      interiorName: interior.name
+      interiorName: (interior as any).display_name || interior.name
     })
   })
 }
@@ -61,7 +80,7 @@ export async function downloadInteriorToLocal(
   interior: InteriorResource,
   token: string
 ): Promise<{ success: boolean; message: string }> {
-  console.log(`⬇️ Устанавливаем интерьер: ${interior.name}`)
+  console.log(`⬇️ Устанавливаем интерьер: ${(interior as any).display_name || interior.name}`)
   
   if (!window.alt) {
     console.error('❌ ALT:V недоступен')
@@ -91,6 +110,20 @@ export async function downloadInteriorToLocal(
           status: 'installed',
           lastChecked: Date.now()
         })
+
+        // Обновляем кэш установленного списка
+        try {
+          const ids = installedCache?.ids || []
+          if (!ids.includes(interior.id)) {
+            const next = { ids: [...ids, interior.id], ts: Date.now() }
+            installedCache = next
+            localStorage.setItem(INSTALLED_CACHE_STORAGE_KEY, JSON.stringify(next))
+          } else {
+            const next = { ids, ts: Date.now() }
+            installedCache = next
+            localStorage.setItem(INSTALLED_CACHE_STORAGE_KEY, JSON.stringify(next))
+          }
+        } catch {}
       }
       
       resolve(response)
@@ -99,7 +132,7 @@ export async function downloadInteriorToLocal(
     window.alt?.on?.('meshhub:interior:download:response', handler)
     window.alt?.emit?.('meshhub:interior:download', {
       interiorId: interior.id,
-      interiorName: interior.name,
+      interiorName: (interior as any).display_name || interior.name,
       token: token
     })
   })
@@ -174,6 +207,41 @@ export async function getInstalledInteriorsFromClient(): Promise<string[]> {
     window.alt?.on?.('meshhub:interior:list:response', handler)
     window.alt?.emit?.('meshhub:interior:list:request', {})
   })
+}
+
+/**
+ * Получить список установленных интерьеров с кэшем (TTL)
+ */
+export async function getInstalledInteriorsCached(options?: { force?: boolean }): Promise<string[]> {
+  const force = options?.force === true
+  if (!force && installedCache && Date.now() - installedCache.ts < INSTALLED_CACHE_TTL_MS) {
+    return installedCache.ids
+  }
+
+  // Пытаемся использовать клиент, при ошибке — fallback к localStorage
+  let ids: string[] = []
+  try {
+    ids = await getInstalledInteriorsFromClient()
+  } catch {
+    ids = getInstalledInteriors()
+  }
+
+  const next: InstalledCache = { ids, ts: Date.now() }
+  installedCache = next
+  try {
+    localStorage.setItem(INSTALLED_CACHE_STORAGE_KEY, JSON.stringify(next))
+  } catch {}
+  return ids
+}
+
+/**
+ * Сбросить кэш установленных интерьеров
+ */
+export function invalidateInstalledInteriorsCache(): void {
+  installedCache = null
+  try {
+    localStorage.removeItem(INSTALLED_CACHE_STORAGE_KEY)
+  } catch {}
 }
 
 /**

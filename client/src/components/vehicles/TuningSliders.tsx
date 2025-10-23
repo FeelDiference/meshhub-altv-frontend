@@ -1,5 +1,5 @@
 import React from 'react'
-import { RotateCcw, Save, HardDrive, Cloud, Maximize2, Minimize2 } from 'lucide-react'
+import { RotateCcw, Save, Maximize2, Minimize2, RefreshCw, Upload, HelpCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { UploadStatus as UploadStatusType } from '@/services/uploadService'
 import UploadStatus from '@/components/UploadStatus'
@@ -27,45 +27,90 @@ type SliderDef = {
   min: number
   max: number
   step: number
+  tooltip: string
+}
+
+// Подсказки для параметров (на русском, из документации)
+const TOOLTIPS: Record<string, string> = {
+  // Трансмиссия
+  initialDriveMaxFlatVel: 'Максимальная скорость в км/ч на последней передаче при максимальных оборотах. Установка этого значения не гарантирует достижения этой скорости.',
+  initialDriveForce: 'Тяговое усилие (ускорение) автомобиля на колёсах. Формула: TorqueWheelsNm/WeightKg. Значения: 0.01-2.0. Большинство автомобилей имеют значение от 0.10 до 0.40.',
+  driveInertia: 'Скорость набора оборотов двигателя. Чем больше значение, тем быстрее двигатель достигает максимальных оборотов. Значения: 0.01-2.0. По умолчанию 1.0.',
+  clutchChangeRateScaleUpShift: 'Множитель скорости сцепления при переключении вверх. Чем больше число, тем быстрее переключение. Рекомендуется не превышать 13. Значение 1 = 0.9 секунды.',
+  clutchChangeRateScaleDownShift: 'Множитель скорости сцепления при переключении вниз. Чем больше число, тем быстрее переключение. Рекомендуется не превышать 13. Значение 1 = 0.9 секунды.',
+  
+  // Тормоза и руль
+  brakeForce: 'Множитель силы торможения. Чем больше число, тем сильнее торможение. Значения: 0.01-2.0. Увеличение не даст эффекта, если колёса ограничены сцеплением.',
+  brakeBiasFront: 'Распределение силы торможения между передней и задней осями. 0.0 = только задняя ось, 1.0 = только передняя ось, 0.5 = равномерно. В реальности обычно ~0.65.',
+  handBrakeForce: 'Мощность ручного тормоза. Чем больше значение, тем сильнее тормоз.',
+  steeringLock: 'Максимальный угол поворота рулевых колёс в градусах. Больший угол уменьшает радиус разворота на малой скорости. Значения: 1-90, обычно ~40 градусов.',
+  
+  // Сцепление с дорогой
+  tractionCurveMax: 'Максимальный коэффициент сцепления при прохождении поворотов/разгоне. Пиковое сцепление до потери контроля.',
+  tractionCurveMin: 'Коэффициент сцепления при скольжении (пробуксовка, занос, недостаточная поворачиваемость).',
+  tractionCurveLateral: 'Форма кривой бокового сцепления (угол скольжения). Меньшие значения делают сцепление отзывчивее, но менее прощающим. Большие - наоборот.',
+  tractionSpringDeltaMax: 'Максимальное расстояние бокового хода боковины шины в метрах. Сила тянет автомобиль в противоположном направлении от бокового хода.',
+  lowSpeedTractionLossMult: 'Насколько снижается сцепление на малой скорости. 0.0 = нормальное сцепление. Влияет на пробуксовку при старте (burnout). Чем выше, тем больше пробуксовка.',
+  camberStiffnesss: 'Насколько автомобиль толкается в направлении крена. Развал дороги также влияет на крен и силы. Значения < 0.0 или > 1.0 создают нереалистичные силы.',
+  tractionBiasFront: 'Распределение тяги между передней и задней осями. 0.01 = только задняя ось, 0.99 = только передняя ось, 0.5 = равномерно. 0.0 или 1.0 вызовут отказ шин.',
+  tractionLossMult: 'Насколько сцепление зависит от разницы материала покрытия от 1.0. Влияет на потерю сцепления при езде по асфальту vs грязи (чем выше, тем больше потеря).',
+  
+  // Подвеска
+  suspensionForce: '1 / (Сила * КоличествоКолёс) = нижний предел силы при полном растяжении. Влияет на жёсткость подвески. Может помочь, если машину легко переворачивает.',
+  suspensionCompDamp: 'Демпфирование при сжатии стойки подвески. Чем больше, тем жёстче.',
+  suspensionReboundDamp: 'Демпфирование при отбое стойки подвески. Чем больше, тем жёстче.',
+  suspensionUpperLimit: 'Насколько колёса могут двигаться вверх от исходного положения.',
+  suspensionLowerLimit: 'Насколько колёса могут двигаться вниз от исходного положения.',
+  suspensionRaise: 'Насколько подвеска поднимает кузов над колёсами. Рекомендуется изменять на втором знаке после запятой. Слишком большое значение вызовет клипинг колёс.',
+  suspensionBiasFront: 'Масштаб демпфирования спереди/сзади. Если больше колёс сзади (грузовики), передняя подвеска должна быть сильнее. > 0.50 = передняя жёстче, < 0.50 = задняя жёстче.',
+  
+  // Стабильность
+  antiRollBarForce: 'Константа пружины стабилизатора, передаваемая противоположному колесу при сжатии. Большие значения = меньше крена кузова.',
+  antiRollBarBiasFront: 'Баланс между передним и задним стабилизатором (0 = перед, 1 = зад).',
+  rollCentreHeightFront: 'Высота центра крена передней оси от дна модели (дороги) в метрах. Высокие значения уменьшают крен кузова. Слишком высокие могут вызвать отрицательный крен.',
+  rollCentreHeightRear: 'Высота центра крена задней оси от дна модели (дороги) в метрах. Высокие значения уменьшают крен кузова. Слишком высокие могут вызвать отрицательный крен.',
+  
+  // Масса
+  mass: 'Вес автомобиля в килограммах. Используется только при столкновении с другим автомобилем или не статическим объектом. Значения: 0.0-10000.0 и выше.',
 }
 
 // Расширенный набор параметров (ключи соответствуют HandlingData / тегам handling.meta)
 const SLIDERS: SliderDef[] = [
   // Трансмиссия / двигатель
-  { key: 'initialDriveMaxFlatVel', label: 'Макс. скорость (км/ч)', min: 80, max: 1000, step: 5 },
-  { key: 'initialDriveForce', label: 'Мощность двигателя', min: 0.0, max: 5.0, step: 0.01 },
-  { key: 'driveInertia', label: 'Инерция двигателя', min: 0.1, max: 20, step: 0.1 },
-  { key: 'clutchChangeRateScaleUpShift', label: 'Скорость переключения ↑', min: 0.1, max: 50, step: 0.1 },
-  { key: 'clutchChangeRateScaleDownShift', label: 'Скорость переключения ↓', min: 0.1, max: 50, step: 0.1 },
+  { key: 'initialDriveMaxFlatVel', label: 'Макс. скорость (км/ч)', min: 20, max: 1000, step: 5, tooltip: TOOLTIPS.initialDriveMaxFlatVel },
+  { key: 'initialDriveForce', label: 'Мощность двигателя', min: 0.0, max: 5.0, step: 0.01, tooltip: TOOLTIPS.initialDriveForce },
+  { key: 'driveInertia', label: 'Инерция двигателя', min: 0.1, max: 20, step: 0.1, tooltip: TOOLTIPS.driveInertia },
+  { key: 'clutchChangeRateScaleUpShift', label: 'Скорость переключения ↑', min: 0.1, max: 50, step: 0.1, tooltip: TOOLTIPS.clutchChangeRateScaleUpShift },
+  { key: 'clutchChangeRateScaleDownShift', label: 'Скорость переключения ↓', min: 0.1, max: 50, step: 0.1, tooltip: TOOLTIPS.clutchChangeRateScaleDownShift },
   // Тормоза / руль
-  { key: 'brakeForce', label: 'Сила торможения', min: 0, max: 20, step: 0.1 },
-  { key: 'brakeBiasFront', label: 'Баланс торможения (перед)', min: 0.0, max: 1.0, step: 0.01 },
-  { key: 'handBrakeForce', label: 'Сила ручника', min: 0, max: 20, step: 0.1 },
-  { key: 'steeringLock', label: 'Угол поворота (°)', min: 10, max: 90, step: 1 },
+  { key: 'brakeForce', label: 'Сила торможения', min: 0, max: 20, step: 0.1, tooltip: TOOLTIPS.brakeForce },
+  { key: 'brakeBiasFront', label: 'Баланс торможения (перед)', min: 0.0, max: 1.0, step: 0.01, tooltip: TOOLTIPS.brakeBiasFront },
+  { key: 'handBrakeForce', label: 'Сила ручника', min: 0, max: 20, step: 0.1, tooltip: TOOLTIPS.handBrakeForce },
+  { key: 'steeringLock', label: 'Угол поворота (°)', min: 10, max: 90, step: 1, tooltip: TOOLTIPS.steeringLock },
   // Сцепление
-  { key: 'tractionCurveMax', label: 'Сцепление MAX', min: 0, max: 50, step: 0.1 },
-  { key: 'tractionCurveMin', label: 'Сцепление MIN', min: 0, max: 50, step: 0.1 },
-  { key: 'tractionCurveLateral', label: 'Боковое сцепление', min: 1, max: 200, step: 1 },
-  { key: 'tractionSpringDeltaMax', label: 'Пружинистость сцепления', min: 0, max: 5, step: 0.01 },
-  { key: 'lowSpeedTractionLossMult', label: 'Потеря сцепл. на мал. скорости', min: 0, max: 10, step: 0.1 },
-  { key: 'camberStiffnesss', label: 'Жёсткость развала', min: 0, max: 10, step: 0.1 },
-  { key: 'tractionBiasFront', label: 'Баланс сцепления (перед)', min: 0.0, max: 1.0, step: 0.01 },
-  { key: 'tractionLossMult', label: 'Потеря сцепления (дрифт)', min: 0, max: 10, step: 0.1 },
+  { key: 'tractionCurveMax', label: 'Сцепление MAX', min: 0, max: 50, step: 0.1, tooltip: TOOLTIPS.tractionCurveMax },
+  { key: 'tractionCurveMin', label: 'Сцепление MIN', min: 0, max: 50, step: 0.1, tooltip: TOOLTIPS.tractionCurveMin },
+  { key: 'tractionCurveLateral', label: 'Боковое сцепление', min: 1, max: 200, step: 1, tooltip: TOOLTIPS.tractionCurveLateral },
+  { key: 'tractionSpringDeltaMax', label: 'Пружинистость сцепления', min: 0, max: 5, step: 0.01, tooltip: TOOLTIPS.tractionSpringDeltaMax },
+  { key: 'lowSpeedTractionLossMult', label: 'Потеря сцепл. на мал. скорости', min: 0, max: 10, step: 0.1, tooltip: TOOLTIPS.lowSpeedTractionLossMult },
+  { key: 'camberStiffnesss', label: 'Жёсткость развала', min: 0, max: 10, step: 0.1, tooltip: TOOLTIPS.camberStiffnesss },
+  { key: 'tractionBiasFront', label: 'Баланс сцепления (перед)', min: 0.0, max: 1.0, step: 0.01, tooltip: TOOLTIPS.tractionBiasFront },
+  { key: 'tractionLossMult', label: 'Потеря сцепления (дрифт)', min: 0, max: 10, step: 0.1, tooltip: TOOLTIPS.tractionLossMult },
   // Подвеска
-  { key: 'suspensionForce', label: 'Жёсткость подвески', min: 0.1, max: 50, step: 0.1 },
-  { key: 'suspensionCompDamp', label: 'Демпфер сжатия', min: 0.1, max: 50, step: 0.1 },
-  { key: 'suspensionReboundDamp', label: 'Демпфер отскока', min: 0.1, max: 50, step: 0.1 },
-  { key: 'suspensionUpperLimit', label: 'Верхний предел подвески', min: -2, max: 2, step: 0.01 },
-  { key: 'suspensionLowerLimit', label: 'Нижний предел подвески', min: -2, max: 2, step: 0.01 },
-  { key: 'suspensionRaise', label: 'Высота подвески', min: -1, max: 1, step: 0.01 },
-  { key: 'suspensionBiasFront', label: 'Баланс подвески (перед)', min: 0.0, max: 1.0, step: 0.01 },
+  { key: 'suspensionForce', label: 'Жёсткость подвески', min: 0.1, max: 50, step: 0.1, tooltip: TOOLTIPS.suspensionForce },
+  { key: 'suspensionCompDamp', label: 'Демпфер сжатия', min: 0.1, max: 50, step: 0.1, tooltip: TOOLTIPS.suspensionCompDamp },
+  { key: 'suspensionReboundDamp', label: 'Демпфер отскока', min: 0.1, max: 50, step: 0.1, tooltip: TOOLTIPS.suspensionReboundDamp },
+  { key: 'suspensionUpperLimit', label: 'Верхний предел подвески', min: -2, max: 2, step: 0.01, tooltip: TOOLTIPS.suspensionUpperLimit },
+  { key: 'suspensionLowerLimit', label: 'Нижний предел подвески', min: -2, max: 2, step: 0.01, tooltip: TOOLTIPS.suspensionLowerLimit },
+  { key: 'suspensionRaise', label: 'Высота подвески', min: -1, max: 1, step: 0.01, tooltip: TOOLTIPS.suspensionRaise },
+  { key: 'suspensionBiasFront', label: 'Баланс подвески (перед)', min: 0.0, max: 1.0, step: 0.01, tooltip: TOOLTIPS.suspensionBiasFront },
   // Стабильность / крен
-  { key: 'antiRollBarForce', label: 'Сила стабилизатора', min: 0, max: 20, step: 0.1 },
-  { key: 'antiRollBarBiasFront', label: 'Баланс стабилизатора (перед)', min: 0.0, max: 1.0, step: 0.01 },
-  { key: 'rollCentreHeightFront', label: 'Центр крена (перед)', min: -5, max: 5, step: 0.05 },
-  { key: 'rollCentreHeightRear', label: 'Центр крена (зад)', min: -5, max: 5, step: 0.05 },
+  { key: 'antiRollBarForce', label: 'Сила стабилизатора', min: 0, max: 20, step: 0.1, tooltip: TOOLTIPS.antiRollBarForce },
+  { key: 'antiRollBarBiasFront', label: 'Баланс стабилизатора (перед)', min: 0.0, max: 1.0, step: 0.01, tooltip: TOOLTIPS.antiRollBarBiasFront },
+  { key: 'rollCentreHeightFront', label: 'Центр крена (перед)', min: -5, max: 5, step: 0.05, tooltip: TOOLTIPS.rollCentreHeightFront },
+  { key: 'rollCentreHeightRear', label: 'Центр крена (зад)', min: -5, max: 5, step: 0.05, tooltip: TOOLTIPS.rollCentreHeightRear },
   // Масса
-  { key: 'mass', label: 'Масса (эквив. гравитации)', min: 400, max: 8000, step: 50 },
+  { key: 'mass', label: 'Масса (эквив. гравитации)', min: 400, max: 8000, step: 50, tooltip: TOOLTIPS.mass },
 ]
 
 // Helper function to parse handling XML and extract values
@@ -124,14 +169,15 @@ function parseHandlingXml(xml: string): Record<string, number> {
   return values
 }
 
-export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode, archiveId }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean; archiveId?: string }) {
+export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean }) {
   const [values, setValues] = React.useState<Record<string, number>>({})
   const [defaults, setDefaults] = React.useState<Record<string, number>>({})
   const lastVehicleKey = React.useRef<string | null>(null)
-  const [saveMode, setSaveMode] = React.useState<'local' | 'remote'>('local')
   const [supportedParams, setSupportedParams] = React.useState<string[]>([])
   const [unsupportedParams, setUnsupportedParams] = React.useState<string[]>([])
   const hasShownRestoreToast = React.useRef<boolean>(false) // Флаг для показа toast только один раз
+  const [hasLocalEdits, setHasLocalEdits] = React.useState<boolean>(false) // Флаг локальных изменений (статус L)
+  const [isLocallyEdited, setIsLocallyEdited] = React.useState<boolean>(false) // Флаг L от сервера
   const [uploadStatus, setUploadStatus] = React.useState<UploadStatusType | null>(null)
   const [isUploading, setIsUploading] = React.useState(false)
 
@@ -142,6 +188,29 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       onFocusModeToggle()
     }
   }
+
+  // Отслеживаем флаг L от сервера
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const alt = (window as any).alt
+      
+      // Слушаем обновления локальных изменений
+      const handleLocalEditsUpdate = (data: any) => {
+        console.log('[TuningSliders] 📨 Received local-edits-update:', data)
+        if (data.localEdits && vehicleKey) {
+          const isLocallyEdited = data.localEdits.includes(vehicleKey)
+          setIsLocallyEdited(isLocallyEdited)
+          console.log(`[TuningSliders] 🔍 Vehicle ${vehicleKey} locally edited: ${isLocallyEdited}`)
+        }
+      }
+      
+      alt.on('local-edits-update', handleLocalEditsUpdate)
+      
+      return () => {
+        alt.off('local-edits-update', handleLocalEditsUpdate)
+      }
+    }
+  }, [vehicleKey])
 
   // Запрос информации о поддержке параметров при монтировании
   React.useEffect(() => {
@@ -278,11 +347,10 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
   }
 
   const handleSave = () => {
-    if (saveMode === 'local') {
-      handleSaveLocal()
-    } else {
-      handleSaveRemote()
-    }
+    // Всегда сохраняем локально
+    handleSaveLocal()
+    // Устанавливаем флаг локальных изменений (статус L)
+    setHasLocalEdits(true)
   }
 
   const handleSaveLocal = () => {
@@ -419,33 +487,25 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
     }
   }
 
-  const handleSaveRemote = async () => {
-    if (!currentXml || !vehicleKey) {
-      console.warn('[TuningSliders] No XML to save')
-      toast.error('Нет данных для сохранения')
-      return
-    }
-
-    if (!archiveId) {
-      console.warn('[TuningSliders] No archiveId provided')
-      toast.error('Ошибка: ID архива не найден')
+  const handleUpload = async () => {
+    if (!vehicleKey) {
+      console.warn('[TuningSliders] No vehicle key provided')
+      toast.error('Нет данных для отправки')
       return
     }
 
     // Проверяем что мы в ALT:V WebView
     if (typeof window === 'undefined' || !('alt' in window)) {
       console.error('[TuningSliders] Not in ALT:V WebView, cannot upload to server')
-      toast.error('Сохранение на сервер доступно только в игре')
+      toast.error('Отправка на сервер доступна только в игре')
       return
     }
 
     try {
       setIsUploading(true)
       
-      console.log('[TuningSliders] Uploading handling modification to server via ALT:V...', {
-        archiveId,
-        vehicleName: vehicleKey,
-        xmlLength: currentXml.length
+      console.log('[TuningSliders] Uploading resource to server via ALT:V...', {
+        resourceName: vehicleKey
       })
       
       // Получаем токен
@@ -460,7 +520,7 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       const uploadPromise = new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error('Таймаут ожидания ответа от сервера'))
-        }, 30000) // 30 секунд
+        }, 60000) // 60 секунд для ZIP архива
         
         // Слушаем ответ от сервера
         const handleResponse = (response: any) => {
@@ -478,10 +538,8 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       })
       
       // Отправляем событие на сервер
-      ;(window as any).alt.emit('meshhub:vehicle:upload:handling', {
-        archiveId,
+      ;(window as any).alt.emit('meshhub:vehicle:upload:toserver', {
         resourceName: vehicleKey,
-        modifiedContent: currentXml,
         token
       })
       
@@ -492,7 +550,7 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       
       if (response.upload) {
         setUploadStatus(response.upload)
-        toast.success('Изменения отправлены на модерацию! 🎉', {
+        toast.success('Ресурс отправлен на модерацию! 🎉', {
           duration: 5000
         })
         console.log('[TuningSliders] Upload successful:', response.upload.id)
@@ -547,34 +605,8 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           )}
         </div>
 
-        {/* Правая часть - переключатель и кнопка сохранения */}
+        {/* Правая часть - кнопки сохранения и отправки */}
         <div className="flex items-center gap-2">
-          {/* Переключатель режима */}
-          <div className="flex items-center bg-base-800 border border-base-700 rounded-lg p-0.5">
-            <button
-              onClick={() => setSaveMode('local')}
-              className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
-                saveMode === 'local'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <HardDrive className="w-3 h-3" />
-              <span>Локально</span>
-            </button>
-            <button
-              onClick={() => setSaveMode('remote')}
-              className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-all ${
-                saveMode === 'remote'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <Cloud className="w-3 h-3" />
-              <span>Удалённо</span>
-            </button>
-          </div>
-
           {/* Кнопка сохранения */}
           <button
             onClick={handleSave}
@@ -584,16 +616,27 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
             <Save className={`w-3.5 h-3.5 ${isUploading ? 'animate-spin' : ''}`} />
             <span>{isUploading ? 'Отправка...' : 'Сохранить'}</span>
           </button>
+          
+          {/* Кнопка отправки (доступна только если есть локальные изменения) */}
+          <button
+            onClick={handleUpload}
+            disabled={disabled || isUploading || (!hasLocalEdits && !isLocallyEdited)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            title={(!hasLocalEdits && !isLocallyEdited) ? 'Доступно только при наличии локальных изменений (статус L)' : 'Отправить ресурс на сервер'}
+          >
+            <Upload className={`w-3.5 h-3.5 ${isUploading ? 'animate-spin' : ''}`} />
+            <span>Отправить</span>
+          </button>
         </div>
       </div>
 
       {/* Статус загрузки */}
-      {uploadStatus && (
-        <UploadStatus 
-          upload={uploadStatus} 
-          onRefresh={handleRefreshUploadStatus}
-        />
-      )}
+        {uploadStatus && uploadStatus.resource_name === vehicleKey && (
+          <UploadStatus 
+            upload={uploadStatus} 
+            onRefresh={handleRefreshUploadStatus}
+          />
+        )}
 
       {/* Сетка слайдеров */}
       <div className="grid grid-cols-2 gap-4">
@@ -604,17 +647,31 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           return (
             <div 
               key={s.key} 
-              className={`text-xs ${isUnsupported ? 'opacity-60' : 'text-gray-300'}`}
+              className="text-xs text-gray-300"
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1.5">
-                  <span className={isUnsupported ? 'text-red-400' : ''}>{s.label}</span>
+                  <span>{s.label}</span>
+                  
+                  {/* Tooltip с подсказкой */}
+                  <div className="relative group/tooltip">
+                    <HelpCircle className="w-3 h-3 text-gray-500 hover:text-blue-400 cursor-help transition-colors" />
+                    {/* Tooltip справа (по умолчанию) */}
+                    <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-64 p-2.5 bg-base-800/95 backdrop-blur-sm border border-base-600 rounded-lg shadow-2xl text-xs leading-relaxed text-gray-200 opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-[9999] pointer-events-none hidden group-hover/tooltip:block tooltip-right">
+                      {s.tooltip}
+                    </div>
+                    {/* Tooltip слева (для правого столбца) */}
+                    <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 w-64 p-2.5 bg-base-800/95 backdrop-blur-sm border border-base-600 rounded-lg shadow-2xl text-xs leading-relaxed text-gray-200 opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-[9999] pointer-events-none hidden group-hover/tooltip:block tooltip-left">
+                      {s.tooltip}
+                    </div>
+                  </div>
+                  
                   {isUnsupported && (
                     <span 
-                      className="text-xs text-red-500 cursor-help" 
-                      title="Этот параметр не работает ingame. Требуется изменение handling.meta"
+                      className="text-xs text-amber-500 cursor-help inline-flex items-center gap-0.5" 
+                      title="Требуется перезагрузка сервера для применения изменений"
                     >
-                      ⚠️
+                      <RefreshCw className="w-3 h-3" />
                     </span>
                   )}
                   {isSupported && (
@@ -626,7 +683,7 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
                     </span>
                   )}
                 </div>
-                <span className={`text-gray-400 ${isUnsupported ? 'line-through' : ''}`}>
+                <span className="text-gray-400">
                   {(values[s.key] ?? s.min)?.toFixed(2)}
                 </span>
               </div>
@@ -637,12 +694,13 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
                 step={s.step}
                 value={values[s.key] ?? s.min}
                 onChange={(e) => update(s.key, Number(e.target.value))}
-                className={`w-full ${isUnsupported ? 'brand-range-disabled' : 'brand-range'}`}
+                className={`w-full ${isUnsupported ? 'brand-range-restart' : 'brand-range'}`}
                 disabled={disabled}
               />
               {isUnsupported && (
-                <div className="text-[10px] text-red-500/70 mt-0.5">
-                  Не работает ingame
+                <div className="text-[10px] text-amber-500/70 mt-0.5 flex items-center gap-1">
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  <span>Требует перезагрузку сервера</span>
                 </div>
               )}
             </div>
@@ -668,24 +726,31 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           background: #8b5cf6; border: 2px solid #3b82f6;
         }
         
-        /* Неподдерживаемые параметры - красный цвет */
-        .tuning-panel .brand-range-disabled {
+        /* Ползунки для параметров, требующих перезагрузку - янтарный цвет */
+        .tuning-panel .brand-range-restart {
           -webkit-appearance: none;
           height: 6px;
-          background: linear-gradient(90deg, rgba(239,68,68,.3), rgba(185,28,28,.3));
+          background: linear-gradient(90deg, rgba(245,158,11,.4), rgba(217,119,6,.4));
           border-radius: 9999px;
           outline: none;
-          opacity: 0.5;
         }
-        .tuning-panel .brand-range-disabled::-webkit-slider-thumb {
+        .tuning-panel .brand-range-restart::-webkit-slider-thumb {
           -webkit-appearance: none;
           width: 14px; height: 14px; border-radius: 9999px;
-          background: #ef4444; border: 2px solid #dc2626;
-          box-shadow: 0 0 0 3px rgba(239,68,68,.2);
+          background: #f59e0b; border: 2px solid #d97706;
+          box-shadow: 0 0 0 3px rgba(245,158,11,.25);
         }
-        .tuning-panel .brand-range-disabled::-moz-range-thumb {
+        .tuning-panel .brand-range-restart::-moz-range-thumb {
           width: 14px; height: 14px; border-radius: 9999px;
-          background: #ef4444; border: 2px solid #dc2626;
+          background: #f59e0b; border: 2px solid #d97706;
+        }
+        
+        /* Tooltips: левый столбец - справа, правый столбец - слева */
+        .grid > *:nth-child(odd) .tooltip-left {
+          display: none !important;
+        }
+        .grid > *:nth-child(even) .tooltip-right {
+          display: none !important;
         }
       `}</style>
     </div>

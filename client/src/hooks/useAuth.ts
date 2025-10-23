@@ -24,36 +24,55 @@ export function useAuth() {
   useEffect(() => {
     console.log('🔐 Инициализация авторизации...')
     
-    try {
-      // Проверяем сохраненную сессию
-      const isAuthed = authService.isAuthenticated()
-      const user = isAuthed ? authService.getUser() : null
+    const checkAuth = () => {
+      try {
+        // Проверяем сохраненную сессию
+        const isAuthed = authService.isAuthenticated()
+        const user = isAuthed ? authService.getUser() : null
 
-      console.log('🔍 Init check: isAuthed =', isAuthed, 'user =', user)
-      console.log('🔍 Auth service session:', getSession())
-      console.log('🔍 LocalStorage session:', localStorage.getItem('auth_session'))
-      console.log('🔍 LocalStorage user:', localStorage.getItem('auth_user'))
+        console.log('🔍 Init check: isAuthed =', isAuthed, 'user =', user)
+        console.log('🔍 Auth service session:', getSession())
+        console.log('🔍 LocalStorage session:', localStorage.getItem('auth_session'))
+        console.log('🔍 LocalStorage user:', localStorage.getItem('auth_user'))
 
-      setState(prev => {
-        console.log('🔍 setState in init: prev.isAuthenticated =', prev.isAuthenticated, '-> new:', isAuthed)
-        return {
-          user,
-          isAuthenticated: isAuthed,
+        setState(prev => {
+          console.log('🔍 setState in init: prev.isAuthenticated =', prev.isAuthenticated, '-> new:', isAuthed)
+          return {
+            user,
+            isAuthenticated: isAuthed,
+            isLoading: false,
+            error: null,
+          }
+        })
+
+        console.log(`🔐 Авторизация ${isAuthed ? 'восстановлена' : 'не найдена'}`)
+        
+      } catch (error) {
+        console.error('❌ Ошибка инициализации авторизации:', error)
+        setState({
+          user: null,
+          isAuthenticated: false,
           isLoading: false,
-          error: null,
-        }
-      })
+          error: 'Ошибка инициализации авторизации',
+        })
+      }
+    }
 
-      console.log(`🔐 Авторизация ${isAuthed ? 'восстановлена' : 'не найдена'}`)
-      
-    } catch (error) {
-      console.error('❌ Ошибка инициализации авторизации:', error)
-      setState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: 'Ошибка инициализации авторизации',
-      })
+    // Обработчик восстановления сессии из Alt:V
+    const handleAuthRestored = () => {
+      console.log('🔄 Auth restored event received, rechecking auth...')
+      setTimeout(() => {
+        checkAuth()
+      }, 100) // Небольшая задержка для обновления данных
+    }
+
+    // Слушаем событие восстановления сессии
+    window.addEventListener('auth:restored', handleAuthRestored)
+
+    checkAuth()
+
+    return () => {
+      window.removeEventListener('auth:restored', handleAuthRestored)
     }
   }, [])
 
@@ -73,18 +92,12 @@ export function useAuth() {
       console.log('🔐 Backend авторизация успешна')
     }
 
-    const handleMockFallback = () => {
-      console.log('🔐 Переключение на mock авторизацию')
-    }
-
     window.addEventListener('auth:logout', handleLogout)
     window.addEventListener('auth:backend-success', handleBackendSuccess)
-    window.addEventListener('auth:mock-fallback', handleMockFallback)
     
     return () => {
       window.removeEventListener('auth:logout', handleLogout)
       window.removeEventListener('auth:backend-success', handleBackendSuccess)
-      window.removeEventListener('auth:mock-fallback', handleMockFallback)
     }
   }, [])
 

@@ -3,7 +3,7 @@
 import axios, { AxiosResponse } from 'axios'
 import type { User, LoginRequest, LoginResponse, SessionData } from '@/types/auth'
 import { SessionCrypto } from '@/utils/crypto'
-import { mockLogin, checkBackendAvailability } from './auth-mock'
+import { checkBackendAvailability } from './auth-mock'
 import { API_CONFIG } from '@/config/api'
 
 // Типы для ответа от backend
@@ -93,7 +93,44 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 
       saveSession(sessionData)
       saveUser(user)
-      
+
+      // Сохраняем токен в ALT:V LocalStorage для использования серверной частью
+      console.log('💾 Checking window.alt availability...')
+      console.log('💾 window object exists:', !!window)
+      console.log('💾 window.alt exists:', !!(window as any).alt)
+      console.log('💾 window.alt type:', typeof (window as any).alt)
+      console.log('💾 window.alt object:', (window as any).alt)
+
+      // Пробуем отправить событие даже если window.alt существует
+      if ((window as any).alt) {
+        console.log('💾 Attempting to save session to ALT:V LocalStorage...')
+        console.log('💾 Token to save:', access_token.substring(0, 20) + '...')
+        console.log('💾 User data:', user)
+        console.log('💾 Expires at:', new Date(sessionData.expiresAt))
+
+        try {
+          // Проверяем структуру window.alt
+          const altObj = (window as any).alt
+          console.log('💾 ALT object methods:', Object.getOwnPropertyNames(altObj))
+
+          if (altObj.emit) {
+            altObj.emit('auth:save-token', {
+              token: access_token,
+              user: user,
+              expiresAt: sessionData.expiresAt
+            })
+            console.log('💾 Event auth:save-token emitted to ALT:V')
+          } else {
+            console.log('💾 No emit method on alt object')
+          }
+        } catch (error) {
+          console.error('💾 Error emitting auth:save-token event:', error)
+        }
+      } else {
+        console.log('⚠️ window.alt not available - cannot save token to ALT:V')
+        console.log('⚠️ Available window properties:', Object.keys(window))
+      }
+
       window.dispatchEvent(new CustomEvent('auth:backend-success'))
       // Возвращаем адаптированный ответ
       return {
@@ -107,36 +144,20 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
       
       if (error.response?.status === 401) {
         throw new Error('Неверные учетные данные')
+      } else if (error.response?.status === 403) {
+        throw new Error('Доступ запрещен')
       } else if (error.response?.status >= 500) {
         throw new Error('Ошибка сервера. Попробуйте позже.')
+      } else if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK') {
+        throw new Error('Сервер недоступен. Проверьте подключение.')
       } else {
         throw new Error('Ошибка подключения к серверу')
       }
     }
     
   } else {
-    // DEMO авторизация 
-    console.log('🎭 Demo режим - используем mock авторизацию')
-    
-    try {
-      const mockResponse = await mockLogin(credentials)
-      console.log('🎭 Mock response:', mockResponse)
-      
-      const sessionData: SessionData = {
-        userId: mockResponse.user.id,
-        token: mockResponse.token,
-        expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 часа
-      }
-
-      saveSession(sessionData)
-      saveUser(mockResponse.user)
-      
-      window.dispatchEvent(new CustomEvent('auth:mock-fallback'))
-      return mockResponse
-      
-    } catch (mockError: any) {
-      throw new Error(mockError.message)
-    }
+    // Backend недоступен - отклоняем авторизацию
+    throw new Error('Сервер недоступен. Авторизация невозможна.')
   }
 }
 
@@ -156,8 +177,7 @@ export async function refreshToken(): Promise<void> {
   const backendAvailable = await checkBackendAvailability()
   
   if (!backendAvailable) {
-    console.log('🎭 Demo режим - токен не нуждается в обновлении')
-    return // В demo режиме токены не истекают
+    throw new Error('Сервер недоступен. Невозможно обновить токен.')
   }
 
   try {
@@ -233,12 +253,36 @@ export function isAuthenticated(): boolean {
 }
 
 /**
+ * Проверка окружения ALT:V
+ */
+function isAltVEnvironment(): boolean {
+  return typeof (window as any).alt !== 'undefined'
+}
+
+/**
  * СОХРАНЕНИЕ СЕССИИ (зашифрованно)
  */
 function saveSession(sessionData: SessionData): void {
   try {
-    const encryptedData = SessionCrypto.encrypt(JSON.stringify(sessionData))
-    localStorage.setItem('auth_session', encryptedData)
+    if (isAltVEnvironment()) {
+      // В ALT:V - сохраняем через клиентскую часть
+      console.log('💾 Saving session via ALT:V LocalStorage...')
+      console.log('💾 Token to save:', sessionData.token.substring(0, 20) + '...')
+      console.log('💾 User data:', getUser())
+      console.log('💾 Expires at:', new Date(sessionData.expiresAt))
+
+      ;(window as any).alt.emit('auth:save-token', {
+        token: sessionData.token,
+        user: getUser(),
+        expiresAt: sessionData.expiresAt
+      })
+      console.log('💾 Event auth:save-token emitted to ALT:V')
+    } else {
+      // В браузере - fallback к localStorage
+      console.log('💾 ALT:V not available, using localStorage fallback')
+      const encryptedData = SessionCrypto.encrypt(JSON.stringify(sessionData))
+      localStorage.setItem('auth_session', encryptedData)
+    }
   } catch (error) {
     console.error('Failed to save session:', error)
   }
@@ -249,11 +293,33 @@ function saveSession(sessionData: SessionData): void {
  */
 function getSession(): SessionData | null {
   try {
-    const encryptedData = localStorage.getItem('auth_session')
-    if (!encryptedData) return null
+    if (isAltVEnvironment()) {
+      // В ALT:V - сессия будет восстановлена через событие
+      // Используем временное хранилище или запрашиваем у клиента
+      console.log('🔍 Checking for ALT:V session...')
 
-    const decryptedData = SessionCrypto.decrypt(encryptedData)
-    return JSON.parse(decryptedData)
+      // Пробуем получить из временного хранилища (устанавливается событием восстановления)
+      const tempSession = (window as any).__altv_temp_session
+      if (tempSession) {
+        console.log('✅ Found temp session:', tempSession)
+        return tempSession
+      }
+
+      // Если нет временной сессии, запрашиваем у ALT:V клиента
+      console.log('🔍 No temp session, requesting from ALT:V...')
+      ;(window as any).alt.emit('auth:request-token')
+
+      // Возвращаем null, сессия будет восстановлена через событие
+      return null
+    } else {
+      // В браузере - из localStorage
+      console.log('💻 Browser environment, using localStorage')
+      const encryptedData = localStorage.getItem('auth_session')
+      if (!encryptedData) return null
+
+      const decryptedData = SessionCrypto.decrypt(encryptedData)
+      return JSON.parse(decryptedData)
+    }
   } catch (error) {
     console.error('Failed to get session:', error)
     return null
@@ -269,8 +335,14 @@ export { getSession }
  * ОЧИСТКА СЕССИИ
  */
 function clearSession(): void {
-  localStorage.removeItem('auth_session')
-  localStorage.removeItem('auth_user')
+  if (isAltVEnvironment()) {
+    console.log('🗑️ Clearing session via ALT:V...')
+    ;(window as any).alt.emit('auth:logout')
+  } else {
+    console.log('🗑️ Clearing localStorage session...')
+    localStorage.removeItem('auth_session')
+    localStorage.removeItem('auth_user')
+  }
 }
 
 /**
@@ -289,12 +361,67 @@ function saveUser(user: User): void {
  */
 export function getUser(): User | null {
   try {
-    const userData = localStorage.getItem('auth_user')
-    return userData ? JSON.parse(userData) : null
+    if (isAltVEnvironment()) {
+      // В ALT:V пользователь может быть в temp storage или запрошен у клиента
+      const tempSession = (window as any).__altv_temp_session
+      if (tempSession && tempSession.user) {
+        return tempSession.user
+      }
+
+      // Запрашиваем у клиента
+      ;(window as any).alt.emit('auth:request-token')
+      return null
+    } else {
+      // В браузере - из localStorage
+      const userData = localStorage.getItem('auth_user')
+      return userData ? JSON.parse(userData) : null
+    }
   } catch (error) {
     console.error('Failed to get user:', error)
     return null
   }
+}
+
+/**
+ * НАСТРОЙКА ОБРАБОТЧИКОВ СОБЫТИЙ ДЛЯ ALT:V
+ */
+export function setupAltVAuthHandlers(): void {
+  if (!isAltVEnvironment()) return
+
+  console.log('🎮 Setting up ALT:V auth event handlers...')
+
+  // Обработчик восстановления сессии
+  ;(window as any).alt.on('auth:restore-session', (data: any) => {
+    console.log('✅ Restoring session from ALT:V LocalStorage:', data)
+
+    // Сохраняем во временное хранилище для getSession()
+    ;(window as any).__altv_temp_session = {
+      userId: data.user?.id,
+      token: data.token,
+      expiresAt: data.expiresAt,
+      user: data.user // Добавляем пользователя в temp session
+    }
+
+    // Сохраняем пользователя в localStorage (для быстрого доступа)
+    if (data.user) {
+      localStorage.setItem('auth_user', JSON.stringify(data.user))
+    }
+
+    console.log('🔄 Temp session set:', (window as any).__altv_temp_session)
+
+    // Триггерим событие для обновления UI
+    window.dispatchEvent(new CustomEvent('auth:restored'))
+  })
+
+  // Обработчик отсутствия сессии
+  ;(window as any).alt.on('auth:no-session', () => {
+    console.log('ℹ️ No stored session in ALT:V LocalStorage')
+    ;(window as any).__altv_temp_session = null
+  })
+
+  // Запрашиваем токен при инициализации
+  console.log('🔐 Requesting stored token from ALT:V...')
+  ;(window as any).alt.emit('auth:request-token')
 }
 
 console.log('🔐 Auth service loaded - simple & clean version')

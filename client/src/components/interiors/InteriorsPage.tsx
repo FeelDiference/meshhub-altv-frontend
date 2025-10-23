@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react'
 import { useALTV } from '../../hooks/useALTV'
 import { getInteriors } from '../../services/interiors'
 import { 
-  checkInteriorExists, 
   downloadInteriorToLocal, 
-  // getInteriorStatus,
+  getInstalledInteriorsCached,
   teleportToInterior 
 } from '../../services/interiorManager'
 import { getAccessToken } from '../../services/auth'
 import type { InteriorResource, Interior, InteriorStatus } from '../../types/interior'
+import toast from 'react-hot-toast'
 import { 
   Download, 
   Loader, 
@@ -21,9 +21,10 @@ import {
   Home,
   Cloud,
   Gamepad2,
-  HardDrive
+  HardDrive,
+  Star
 } from 'lucide-react'
-import { Button } from '../common/Button'
+// import { Button } from '../common/Button'
 
 export function InteriorsPage() {
   const { isAvailable } = useALTV()
@@ -33,10 +34,68 @@ export function InteriorsPage() {
   const [interiorStatuses, setInteriorStatuses] = useState<Map<string, InteriorStatus>>(new Map())
   const [activeTab] = useState<'hub' | 'gtav' | 'local'>('hub')
   const [expandedInteriors, setExpandedInteriors] = useState<Set<string>>(new Set())
+  const [favoriteLocations, setFavoriteLocations] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadInteriors()
+    loadFavorites()
   }, [])
+
+  const loadFavorites = () => {
+    try {
+      const stored = localStorage.getItem('interior_favorites')
+      if (stored) {
+        setFavoriteLocations(new Set(JSON.parse(stored)))
+      }
+    } catch (e) {
+      console.warn('Failed to load favorites:', e)
+    }
+  }
+
+  const saveFavorites = (favorites: Set<string>) => {
+    try {
+      localStorage.setItem('interior_favorites', JSON.stringify([...favorites]))
+    } catch (e) {
+      console.warn('Failed to save favorites:', e)
+    }
+  }
+
+  const toggleFavorite = (locationId: string, locationData?: {name: string, coords: {x: number, y: number, z: number}}) => {
+    const newFavorites = new Set(favoriteLocations)
+    if (newFavorites.has(locationId)) {
+      newFavorites.delete(locationId)
+      // Удаляем из детальных данных
+      try {
+        const stored = localStorage.getItem('interior_favorite_locations')
+        if (stored) {
+          const locations = JSON.parse(stored)
+          const filtered = locations.filter((loc: any) => loc.id !== locationId)
+          localStorage.setItem('interior_favorite_locations', JSON.stringify(filtered))
+        }
+      } catch (e) {
+        console.warn('Failed to remove from detailed favorites:', e)
+      }
+    } else {
+      newFavorites.add(locationId)
+      // Сохраняем детальные данные для отображения на Dashboard
+      if (locationData) {
+        try {
+          const stored = localStorage.getItem('interior_favorite_locations')
+          const locations = stored ? JSON.parse(stored) : []
+          locations.push({
+            id: locationId,
+            name: locationData.name,
+            coords: locationData.coords
+          })
+          localStorage.setItem('interior_favorite_locations', JSON.stringify(locations))
+        } catch (e) {
+          console.warn('Failed to save detailed favorites:', e)
+        }
+      }
+    }
+    setFavoriteLocations(newFavorites)
+    saveFavorites(newFavorites)
+  }
 
   const loadInteriors = async () => {
     try {
@@ -46,11 +105,18 @@ export function InteriorsPage() {
       const interiorsData = await getInteriors()
       setInteriors(interiorsData)
 
-      // Проверяем статус установки для каждого интерьера
+      // Получаем список всех установленных интерьеров с кэшем (БЫСТРО!)
+      console.log('🔍 Получаем список установленных интерьеров...')
+      const installedInteriorIds = await getInstalledInteriorsCached()
+      console.log(`✅ Установлено интерьеров: ${installedInteriorIds.length}`)
+      
+      // Создаем Set для быстрого поиска
+      const installedSet = new Set(installedInteriorIds)
+      
+      // Устанавливаем статусы для всех интерьеров за одну итерацию
       const statuses = new Map<string, InteriorStatus>()
       for (const interior of interiorsData) {
-        const isInstalled = await checkInteriorExists(interior)
-        statuses.set(interior.id, isInstalled ? 'installed' : 'not_installed')
+        statuses.set(interior.id, installedSet.has(interior.id) ? 'installed' : 'not_installed')
       }
       setInteriorStatuses(statuses)
     } catch (err: any) {
@@ -92,6 +158,32 @@ export function InteriorsPage() {
     teleportToInterior(interior)
   }
 
+  const handleCopyCoords = (loc: any, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const text = `${loc.position.x.toFixed(2)}, ${loc.position.y.toFixed(2)}, ${loc.position.z.toFixed(2)}`
+    try {
+      navigator.clipboard?.writeText(text)
+    } catch {}
+  }
+
+  const getPosition = (loc: any): { x: number; y: number; z: number } | null => {
+    if (loc && loc.position && Number.isFinite(loc.position.x) && Number.isFinite(loc.position.y) && Number.isFinite(loc.position.z)) {
+      return { x: loc.position.x, y: loc.position.y, z: loc.position.z }
+    }
+    if (
+      Number.isFinite(loc?.position_x) &&
+      Number.isFinite(loc?.position_y) &&
+      Number.isFinite(loc?.position_z)
+    ) {
+      return { x: Number(loc.position_x), y: Number(loc.position_y), z: Number(loc.position_z) }
+    }
+    return null
+  }
+
+  const getArchetypeName = (loc: any): string => {
+    return loc?.archetypeName || loc?.archetype_name || loc?.displayName || loc?.display_name || loc?.name || 'interior'
+  }
+
   const toggleExpanded = (interiorId: string) => {
     setExpandedInteriors(prev => {
       const newSet = new Set(prev)
@@ -109,7 +201,7 @@ export function InteriorsPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white mb-2">Интерьеры (MLO)</h1>
-        <div className="flex items-center space-x-2 text-sm">
+        <div className="flex items-center space-x-2 text-sm mb-4">
           <div className={`px-2 py-1 rounded-full text-xs ${
             isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'
           }`}>
@@ -210,7 +302,7 @@ export function InteriorsPage() {
                         <div className="flex items-center space-x-2">
                           <Building2 className="w-4 h-4 text-primary-400" />
                           <div className="text-sm font-medium text-white">
-                            {interior.displayName || interior.name}
+                            {(interior as any).displayName || (interior as any).display_name || interior.name}
                           </div>
                         </div>
                         <div className="text-xs text-gray-400 mt-1">{interior.name}</div>
@@ -233,45 +325,62 @@ export function InteriorsPage() {
                           <span className="text-xs text-green-400">Установлен</span>
                         </>
                       ) : (
-                        <Button
+                        <button
                           onClick={(e) => handleDownload(interior, e)}
                           disabled={isInstalling}
-                          variant="primary"
-                          size="sm"
-                          icon={isInstalling ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                          className={`p-2 rounded border transition-colors ${
+                            isInstalling
+                              ? 'bg-gray-800/50 border-gray-700 text-gray-500 cursor-not-allowed'
+                              : 'text-blue-400 border-base-600 hover:text-blue-300 hover:bg-base-900/30 hover:border-base-500'
+                          }`}
+                          title={isInstalling ? 'Установка...' : 'Скачать'}
                         >
-                          {isInstalling ? 'Установка...' : 'Скачать'}
-                        </Button>
+                          {isInstalling ? (
+                            <Loader className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
+                        </button>
                       )}
                     </div>
                   </div>
 
                   {/* Expanded details - locations list */}
-                  {isExpanded && interior.interiors && interior.interiors.length > 0 && (
+                  {isExpanded && Array.isArray((interior as any).interiors) && (interior as any).interiors.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-base-600">
                       <div className="text-xs font-medium text-gray-400 mb-2">
-                        Локации ({interior.interiors.length}):
+                        Локации ({(interior as any).interiors.length}):
                       </div>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {interior.interiors.map((loc) => (
+                        {(interior as any).interiors
+                          .filter((loc: any) => !!getPosition(loc))
+                          .map((loc: any) => {
+                            const pos = getPosition(loc)!
+                            const archetype = getArchetypeName(loc)
+                            return (
                           <div
                             key={loc.id}
                             className="flex items-center justify-between p-2 bg-base-900 rounded text-xs hover:bg-base-800 transition-colors"
                           >
                             <div className="flex-1">
                               <div className="text-white font-medium mb-1">
-                                {loc.displayName || loc.archetypeName}
+                                {archetype}
                               </div>
                               <div className="text-gray-500 flex items-center space-x-3">
-                                <span>
-                                  X: {loc.position.x.toFixed(1)}
-                                </span>
-                                <span>
-                                  Y: {loc.position.y.toFixed(1)}
-                                </span>
-                                <span>
-                                  Z: {loc.position.z.toFixed(1)}
-                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    handleCopyCoords({ position: pos }, e)
+                                    const coords = `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`
+                                    if ((window as any).alt?.emit) {
+                                      ;(window as any).alt.emit('meshhub:interior:coords:copy', { coords, interiorId: (interior as any).id, archetypeName: archetype })
+                                    }
+                                    try { toast.success(`Скопировано: ${coords}`) } catch {}
+                                  }}
+                                  className="px-1.5 py-0.5 rounded bg-base-800/60 border border-base-700/60 text-gray-300 hover:text-white hover:bg-base-700/60 transition-colors"
+                                  title="Скопировать координаты"
+                                >
+                                  X: {pos.x.toFixed(1)} Y: {pos.y.toFixed(1)} Z: {pos.z.toFixed(1)}
+                                </button>
                               </div>
                               {loc.category && (
                                 <div className="mt-1">
@@ -281,25 +390,56 @@ export function InteriorsPage() {
                                 </div>
                               )}
                             </div>
-                            {isAvailable && isInstalled && (
+                            <div className="flex items-center space-x-1">
                               <button
-                                onClick={(e) => handleTeleport(loc, e)}
-                                className="p-2 text-primary-400 hover:text-primary-300 hover:bg-primary-900/20 rounded transition-colors"
-                                title="Телепортироваться"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleFavorite(loc.id, {
+                                    name: archetype,
+                                    coords: pos
+                                  })
+                                  try { 
+                                    toast.success(favoriteLocations.has(loc.id) ? 'Удалено из избранного' : 'Добавлено в избранное') 
+                                  } catch {}
+                                }}
+                                className={`p-2 rounded transition-colors ${
+                                  favoriteLocations.has(loc.id)
+                                    ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-900/20'
+                                    : 'text-gray-400 hover:text-yellow-400 hover:bg-yellow-900/10'
+                                }`}
+                                title={favoriteLocations.has(loc.id) ? 'Удалить из избранного' : 'Добавить в избранное'}
                               >
-                                <MapPin className="w-4 h-4" />
+                                <Star className={`w-4 h-4 ${favoriteLocations.has(loc.id) ? 'fill-current' : ''}`} />
                               </button>
-                            )}
+                              {isAvailable && (
+                                <button
+                                  onClick={(e) => {
+                                    const normalized: Interior = {
+                                      // @ts-ignore backend id could be missing but we keep for API symmetry
+                                      id: loc.id || (interior as any).id,
+                                      archetypeName: archetype,
+                                      position: pos
+                                    } as any
+                                    handleTeleport(normalized, e)
+                                  }}
+                                  className="p-2 text-primary-400 hover:text-primary-300 hover:bg-primary-900/20 rounded transition-colors"
+                                  title="Телепортироваться"
+                                >
+                                  <MapPin className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        ))}
+                            )
+                          })}
                       </div>
                     </div>
                   )}
 
                   {/* Если интерьер не раскрыт, показываем краткую инфу */}
-                  {!isExpanded && interior.interiors && interior.interiors.length > 0 && (
+                  {!isExpanded && Array.isArray((interior as any).interiors) && (interior as any).interiors.length > 0 && (
                     <div className="mt-2 text-xs text-gray-500">
-                      Нажмите для просмотра {interior.interiors.length} локаций
+                      Нажмите для просмотра {(interior as any).interiors.length} локаций
                     </div>
                   )}
                 </div>

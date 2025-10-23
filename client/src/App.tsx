@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users, Clock, Pencil, Check, ChevronDown, ChevronRight, Loader } from 'lucide-react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users, Clock, Pencil, Check, ChevronDown, ChevronRight, Loader, Star } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
@@ -16,7 +16,7 @@ import { getVehicles } from '@/services/vehicles'
 import type { VehicleResource } from '@/types/vehicle'
 import { logAppPathInfo } from '@/utils/pathDetection'
 import { downloadVehicleWithStatus, reloadVehicle, type VehicleStatus } from '@/services/vehicleManager'
-import { getAccessToken } from '@/services/auth'
+import { getAccessToken, setupAltVAuthHandlers } from '@/services/auth'
 import { getGTAVVehicles, getGTAVCategories, type GTAVVehicle } from '@/data/gtav-vehicles-with-categories'
 import { getWeaponArchives, getWeaponsInArchive } from '@/services/weapons'
 import type { WeaponResource } from '@/types/weapon'
@@ -49,13 +49,28 @@ const Dashboard = () => {
     time: [],
     timeSpeed: []
   })
+  
   const [favoriteLocations, setFavoriteLocations] = useState<Array<{id: string, name: string, coords: {x: number, y: number, z: number}}>>([])
+  const [favoriteVehicles, setFavoriteVehicles] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null)
   const [editingLocationName, setEditingLocationName] = useState('')
 
+  // Отладочная информация
+  console.log('[Dashboard] Current state:', {
+    favorites,
+    favoriteLocations: favoriteLocations.length,
+    favoriteVehicles: favoriteVehicles.length,
+    isLoading
+  })
+
   // Загружаем избранные настройки при монтировании
   useEffect(() => {
+    console.log(`[Dashboard] Loading favorites...`)
+    
+    // Загружаем избранное через Alt:V (персистентное хранилище)
+    
+    // Затем запрашиваем с сервера
     if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
       try {
         (window as any).alt.emit('world:favorites:load')
@@ -69,13 +84,36 @@ const Dashboard = () => {
     try {
       const stored = localStorage.getItem('interior_favorites')
       const storedLocations = localStorage.getItem('interior_favorite_locations')
+      console.log('[Dashboard] Loading locations - stored:', stored, 'storedLocations:', storedLocations)
       if (stored && storedLocations) {
         const favoriteIds = JSON.parse(stored)
         const locations = JSON.parse(storedLocations)
-        setFavoriteLocations(locations.filter((loc: any) => favoriteIds.includes(loc.id)))
+        const filteredLocations = locations.filter((loc: any) => favoriteIds.includes(loc.id))
+        setFavoriteLocations(filteredLocations)
+        console.log('[Dashboard] Loaded favorite locations:', filteredLocations.length)
       }
     } catch (e) {
       console.warn('[Dashboard] Failed to load favorite locations:', e)
+    }
+
+    // Загружаем избранные машины через Alt:V
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('favorites:vehicles:load')
+        console.log('[Dashboard] Requesting favorite vehicles from Alt:V storage')
+      } catch (error) {
+        console.error('[Dashboard] Error requesting favorite vehicles:', error)
+      }
+    }
+
+    // Устанавливаем таймаут для завершения загрузки, если сервер не отвечает
+    const loadingTimeout = setTimeout(() => {
+      setIsLoading(false)
+      console.log('[Dashboard] Loading timeout - setting isLoading to false')
+    }, 2000) // 2 секунды ожидания
+
+    return () => {
+      clearTimeout(loadingTimeout)
     }
   }, [])
 
@@ -83,14 +121,15 @@ const Dashboard = () => {
   useEffect(() => {
     if (typeof window !== 'undefined' && 'alt' in window) {
       const handleFavoritesResponse = (data: any) => {
+        console.log(`[Dashboard] Received favorites response from server:`, data)
         if (data.success && data.favorites) {
+          console.log(`[Dashboard] Using favorites from Alt:V storage:`, data.favorites)
           setFavorites(data.favorites)
-          setIsLoading(false)
-          console.log(`[Dashboard] Received favorites:`, data.favorites)
         } else {
-          setIsLoading(false)
           console.error(`[Dashboard] Failed to load favorites:`, data.error)
         }
+        // Всегда завершаем загрузку при получении ответа от сервера
+        setIsLoading(false)
       }
       ;(window as any).alt.on('world:favorites:response', handleFavoritesResponse)
       return () => {
@@ -99,7 +138,38 @@ const Dashboard = () => {
     }
   }, [])
 
-  const hasFavorites = favorites.weather.length > 0 || favorites.time.length > 0 || favorites.timeSpeed.length > 0 || favoriteLocations.length > 0
+  // Обработчик получения избранных машин от Alt:V
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handleVehicleFavoritesResponse = (data: any) => {
+        console.log('[Dashboard] Received vehicle favorites response:', data)
+        if (data.success && data.vehicles) {
+          setFavoriteVehicles(data.vehicles)
+          console.log('[Dashboard] Updated favorite vehicles from Alt:V:', data.vehicles)
+        } else {
+          console.error('[Dashboard] Failed to load vehicle favorites:', data.error)
+        }
+      }
+
+      const handleVehicleFavoritesUpdated = (data: any) => {
+        console.log('[Dashboard] Vehicle favorites updated:', data)
+        if (data.vehicles) {
+          setFavoriteVehicles(data.vehicles)
+          console.log('[Dashboard] Updated favorite vehicles:', data.vehicles)
+        }
+      }
+
+      ;(window as any).alt.on('favorites:vehicles:response', handleVehicleFavoritesResponse)
+      ;(window as any).alt.on('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
+      
+      return () => {
+        ;(window as any).alt.off?.('favorites:vehicles:response', handleVehicleFavoritesResponse)
+        ;(window as any).alt.off?.('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
+      }
+    }
+  }, [])
+
+  const hasFavorites = (favorites.weather?.length > 0) || (favorites.time?.length > 0) || (favorites.timeSpeed?.length > 0) || (favoriteLocations?.length > 0) || (favoriteVehicles?.length > 0)
 
   // Функции для применения настроек
   const applyWeather = (weather: string) => {
@@ -197,6 +267,19 @@ const Dashboard = () => {
     setEditingLocationName('')
   }
 
+  const spawnVehicle = (vehicleName: string) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('vehicle:spawn', { modelName: vehicleName })
+        toast.success(`Заспавнен ${vehicleName}`)
+        console.log(`[Dashboard] Spawned vehicle: ${vehicleName}`)
+      } catch (error) {
+        console.error(`[Dashboard] Error spawning vehicle:`, error)
+        toast.error('Ошибка спавна машины')
+      }
+    }
+  }
+
   return (
     <div className="flex-1 p-6">
       <div className="mb-6">
@@ -229,14 +312,14 @@ const Dashboard = () => {
         ) : (
           <div className="space-y-3">
             {/* Избранная погода */}
-            {favorites.weather.length > 0 && (
+            {favorites.weather?.length > 0 && (
               <div>
                 <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
                   <Cloud className="w-3.5 h-3.5 text-blue-400" />
                   Погода:
                 </h3>
                 <div className="space-y-2">
-                  {favorites.weather.map(weather => (
+                  {favorites.weather?.map(weather => (
                     <div
                       key={weather}
                       onClick={() => applyWeather(weather)}
@@ -272,14 +355,14 @@ const Dashboard = () => {
             )}
             
             {/* Избранное время */}
-            {favorites.time.length > 0 && (
+            {favorites.time?.length > 0 && (
               <div>
                 <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-yellow-400" />
                   Время:
                 </h3>
                 <div className="space-y-2">
-                  {favorites.time.map(time => (
+                  {favorites.time?.map(time => (
                     <div
                       key={time}
                       onClick={() => applyTime(time)}
@@ -315,14 +398,14 @@ const Dashboard = () => {
             )}
             
             {/* Избранная скорость времени */}
-            {favorites.timeSpeed.length > 0 && (
+            {favorites.timeSpeed?.length > 0 && (
               <div>
                 <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-purple-400" />
                   Скорость:
                 </h3>
                 <div className="space-y-2">
-                  {favorites.timeSpeed.map(speed => (
+                  {favorites.timeSpeed?.map(speed => (
                     <div
                       key={speed}
                       onClick={() => applyTimeSpeed(speed)}
@@ -457,6 +540,49 @@ const Dashboard = () => {
                 </div>
               </div>
             )}
+
+            {/* Избранные машины */}
+            {favoriteVehicles.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
+                  <Car className="w-3.5 h-3.5 text-blue-400" />
+                  Машины:
+                </h3>
+                <div className="space-y-2">
+                  {favoriteVehicles.map(vehicleName => (
+                    <div
+                      key={vehicleName}
+                      onClick={() => spawnVehicle(vehicleName)}
+                      className="w-full p-3 bg-base-700/50 border border-base-600 rounded-lg hover:bg-base-600/50 hover:border-blue-500/30 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center group-hover:bg-blue-600/30 transition-colors">
+                            <Car className="w-4 h-4 text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">
+                              {vehicleName}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              Избранный автомобиль
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-500 group-hover:text-blue-400 transition-colors">
+                            Заспавнить
+                          </div>
+                          <div className="w-5 h-5 bg-blue-600/20 rounded flex items-center justify-center group-hover:bg-blue-600/30 transition-colors">
+                            <Play className="w-3 h-3 text-blue-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -465,6 +591,101 @@ const Dashboard = () => {
 }
 
 const VehiclesPage = () => {
+  // Состояние для локальных изменений
+  const [localEdits, setLocalEdits] = useState<string[]>([])
+  const [restartRequired, setRestartRequired] = useState<string[]>([])
+  
+  // Состояние для избранных машин (загружается через Alt:V)
+  const [favoriteVehicles, setFavoriteVehicles] = useState<string[]>([])
+
+  // Функции для управления избранными
+  const toggleFavorite = useCallback((vehicleName: string) => {
+    console.log(`[VehiclesPage] Toggling favorite for vehicle: ${vehicleName}`)
+    
+    // Отправляем в Alt:V для переключения избранного
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      ;(window as any).alt.emit('favorites:vehicle:toggle', {
+        vehicleName,
+        isFavorite: !favoriteVehicles.includes(vehicleName)
+      })
+    } else {
+      console.warn('[VehiclesPage] Alt:V not available, cannot toggle favorite')
+    }
+  }, [favoriteVehicles])
+
+  const isFavorite = useCallback((vehicleName: string) => {
+    return favoriteVehicles?.includes(vehicleName) || false
+  }, [favoriteVehicles])
+  
+  // Загрузка и обработка избранных машин от Alt:V
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      // Загружаем избранные машины при монтировании
+      ;(window as any).alt.emit('favorites:vehicles:load')
+      console.log('[VehiclesPage] Requesting favorite vehicles from Alt:V storage')
+
+      const handleVehicleFavoritesResponse = (data: any) => {
+        console.log('[VehiclesPage] Received vehicle favorites response:', data)
+        if (data.success && data.vehicles) {
+          setFavoriteVehicles(data.vehicles)
+          console.log('[VehiclesPage] Loaded favorite vehicles:', data.vehicles)
+        } else {
+          console.error('[VehiclesPage] Failed to load vehicle favorites:', data.error)
+        }
+      }
+
+      const handleVehicleFavoritesUpdated = (data: any) => {
+        console.log('[VehiclesPage] Vehicle favorites updated:', data)
+        if (data.vehicles) {
+          setFavoriteVehicles(data.vehicles)
+        }
+      }
+
+      ;(window as any).alt.on('favorites:vehicles:response', handleVehicleFavoritesResponse)
+      ;(window as any).alt.on('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
+      
+      return () => {
+        ;(window as any).alt.off?.('favorites:vehicles:response', handleVehicleFavoritesResponse)
+        ;(window as any).alt.off?.('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
+      }
+    }
+  }, [])
+  
+  // Обработчик сообщений от клиентского модуля
+  useEffect(() => {
+    const handleLocalEditsUpdate = (data: any) => {
+      console.log('[App] 📨 Received local-edits-update:', data)
+      console.log('[App] localEdits array:', data.localEdits)
+      console.log('[App] restartRequired array:', data.restartRequired)
+      setLocalEdits(data.localEdits || [])
+      setRestartRequired(data.restartRequired || [])
+      console.log('[App] ✅ State updated')
+    }
+    
+    // В ALT:V WebView используем alt.on для прослушивания событий
+    if (typeof window !== 'undefined' && (window as any).alt) {
+      console.log('[App] 🎧 Subscribing to local-edits-update event')
+      ;(window as any).alt.on('local-edits-update', handleLocalEditsUpdate)
+      console.log('[App] ✅ Event handler registered')
+      
+      // Запрашиваем данные при открытии панели
+      const handlePanelOpened = () => {
+        console.log('[App] 📤 Panel opened, requesting local edits')
+        ;(window as any).alt.emit('request-local-edits')
+      }
+      
+      ;(window as any).alt.on('altv:panel:opened', handlePanelOpened)
+      console.log('[App] ✅ Panel opened handler registered for altv:panel:opened')
+      
+      return () => {
+        console.log('[App] 🧹 Cleaning up event handlers')
+        ;(window as any).alt.off?.('local-edits-update', handleLocalEditsUpdate)
+        ;(window as any).alt.off?.('altv:panel:opened', handlePanelOpened)
+      }
+    } else {
+      console.log('[App] ⚠️ alt not available for local-edits-update subscription')
+    }
+  }, [])
   
   const { spawnVehicle, destroyVehicle, currentVehicle, isAvailable, updateHandling, resetHandling, requestHandlingMeta } = useALTV({
     onVehicleSpawned: (data) => {
@@ -516,6 +737,9 @@ const VehiclesPage = () => {
     },
     onHandlingMetaReceived: (data) => {
       console.log('[VehiclesPage] Received handling meta from server:', data.modelName)
+      console.log('[VehiclesPage] XML length:', data.xml?.length)
+      console.log('[VehiclesPage] XML preview (first 200 chars):', data.xml?.substring(0, 200))
+      console.log('[VehiclesPage] XML preview (last 200 chars):', data.xml?.substring(data.xml.length - 200))
       setHandlingMetaXml(data.xml)
       currentXmlVehicleName.current = data.modelName
       vehicleXmlCache.current.set(data.modelName, data.xml)
@@ -529,6 +753,7 @@ const VehiclesPage = () => {
   // UI state for side panels
   const [selectedVehicle, setSelectedVehicle] = useState<AnyVehicle | null>(null)
   const [handlingMetaXml, setHandlingMetaXml] = useState<string>('')
+  const [highlightedXmlParam, setHighlightedXmlParam] = useState<string>('')
   const [showTuning, setShowTuning] = useState(false)
   const [showMeta, setShowMeta] = useState(false)
   const [showActions, setShowActions] = useState(false)
@@ -556,9 +781,10 @@ const VehiclesPage = () => {
     try {
       console.log('[VehiclesPage] Loading local vehicles...')
       
-      // Запрашиваем локальные машины с сервера
+      // Запрашиваем список установленных машин с сервера
+      // Local машины автоматически формируются в обработчике onInstalled
       if (typeof window !== 'undefined' && 'alt' in window) {
-        ;(window as any).alt.emit('meshhub:vehicle:local:list:request')
+        ;(window as any).alt.emit('vehicle:installed:list:request')
       }
     } catch (error) {
       console.error('[VehiclesPage] Error loading local vehicles:', error)
@@ -574,6 +800,11 @@ const VehiclesPage = () => {
     
     // Для HUB машин - всегда показываем XML
     if (activeTab === 'hub') {
+      return true
+    }
+    
+    // Для LOCAL машин - показываем XML (есть доступ к handling.meta)
+    if ('isLocal' in vehicle && vehicle.isLocal) {
       return true
     }
     
@@ -661,6 +892,7 @@ const VehiclesPage = () => {
     // Определяем категорию машины
     const vehicleCategory: 'gtav' | 'local' | 'meshhub' = 
       'isGTAV' in selectedVehicle && selectedVehicle.isGTAV ? 'gtav' :
+      'isLocal' in selectedVehicle && selectedVehicle.isLocal ? 'local' :
       'category' in selectedVehicle && (selectedVehicle.category === 'local' || selectedVehicle.category === 'meshhub' || selectedVehicle.category === 'gtav') ? selectedVehicle.category :
       'meshhub'
 
@@ -668,6 +900,13 @@ const VehiclesPage = () => {
     if (vehicleCategory === 'gtav' && isAvailable) {
       console.log('[VehiclesPage] Requesting GTAV handling for', selectedVehicle.name)
       requestHandlingMeta(selectedVehicle.name, 'gtav')
+      return
+    }
+
+    // Для локальных машин - запрашиваем через Alt:V (локальный индекс)
+    if (vehicleCategory === 'local' && isAvailable) {
+      console.log('[VehiclesPage] Requesting LOCAL handling for', selectedVehicle.name)
+      requestHandlingMeta(selectedVehicle.name, 'local')
       return
     }
 
@@ -717,6 +956,15 @@ const VehiclesPage = () => {
         setPanelsVisible(true)
       } else {
         console.log('[VehiclesPage] User manually collapsed panels before - not auto-expanding')
+      }
+      
+      // Принудительно перезагружаем handling.meta для текущего автомобиля при открытии панели
+      if (currentVehicle && isAvailable) {
+        console.log('[VehiclesPage] 🔄 Panel opened - forcing handling.meta reload for', currentVehicle.modelName)
+        // Небольшая задержка, чтобы панель успела открыться
+        setTimeout(() => {
+          requestHandlingMeta(currentVehicle.modelName, 'gtav')
+        }, 100)
       }
     }
     const onPanelClosed = () => {
@@ -851,13 +1099,23 @@ const VehiclesPage = () => {
         }
       }
 
-      const handleHandlingSaved = (data: { success: boolean; fileName?: string; filePath?: string; downloadsPath?: string; error?: string }) => {
+      const handleHandlingSaved = (data: { success: boolean; fileName?: string; filePath?: string; downloadsPath?: string; error?: string; vehicleName?: string }) => {
         if (data.success) {
-          toast.success(`Файл ${data.fileName} сохранён в папку Downloads!\nПуть: ${data.downloadsPath}`, {
-            duration: 7000,
-          })
+          toast.success(
+            `✅ Handling обновлен!\n\n` +
+            `📦 RPF архив обновлен для ${data.vehicleName || 'транспорта'}\n` +
+            `💾 Резервная копия: ${data.fileName}\n` +
+            `📁 Путь: ${data.downloadsPath}\n\n` +
+            `⚠️ Требуется перезагрузка сервера для применения изменений в игре`,
+            {
+              duration: 10000,
+              style: {
+                maxWidth: '500px',
+              }
+            }
+          )
         } else {
-          toast.error(`Ошибка сохранения: ${data.error}`, {
+          toast.error(`❌ Ошибка сохранения: ${data.error}`, {
             duration: 5000,
           })
         }
@@ -895,15 +1153,12 @@ const VehiclesPage = () => {
     if (!(typeof window !== 'undefined' && 'alt' in window)) return
     
     const onInstalled = (installedNames: string[]) => {
+      console.log('[VehiclesPage] Received installed vehicles from server:', installedNames?.length)
       
       // Используем callback чтобы получить актуальный список vehicles
       setVehicles(currentVehicles => {
         
-        
-        
         // Обновляем статусы установленных машин
-        // Логика обновления статусов будет в setVehicleStatuses ниже
-        
         setVehicleStatuses(prev => {
           const m = new Map(prev)
           for (const v of currentVehicles) {
@@ -923,6 +1178,29 @@ const VehiclesPage = () => {
           return next
         })
         
+        // НОВАЯ ЛОГИКА: Формируем список LOCAL машин
+        // Local = все установленные машины, которых НЕТ в HUB
+        const hubVehicleNames = new Set(currentVehicles.map(v => v.name.toLowerCase()))
+        const localOnly = installedNames
+          ?.filter(name => !hubVehicleNames.has(name.toLowerCase()))
+          .map(name => ({
+            id: `local_${name}`,
+            name: name,
+            displayName: name,
+            modelName: name,
+            category: 'local',
+            tags: [],
+            size: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            metadata: null,
+            isLocal: true
+          })) || []
+        
+        console.log('[VehiclesPage] Created local vehicles list:', localOnly.length)
+        console.log('[VehiclesPage] Local vehicles:', localOnly.map(v => v.name).join(', '))
+        setLocalVehicles(localOnly)
+        
         return currentVehicles // Возвращаем без изменений
       })
     }
@@ -931,11 +1209,12 @@ const VehiclesPage = () => {
     return () => (window as any).alt.off?.('vehicle:installed:list:response', onInstalled)
   }, [])
 
-  // Обработчик получения локальных машин
+  // Обработчик получения локальных машин (УСТАРЕЛ - теперь формируется автоматически в onInstalled)
+  // Оставлен для обратной совместимости, если сервер отправит старое событие
   useEffect(() => {
     const onLocalVehicles = (vehicles: any[]) => {
-      console.log('[VehiclesPage] Local vehicles received from server:', vehicles.length)
-      setLocalVehicles(vehicles)
+      console.log('[VehiclesPage] Local vehicles received from server (legacy event):', vehicles.length)
+      // Игнорируем, так как теперь формируется в onInstalled
     }
     
     if ('alt' in window) {
@@ -1251,6 +1530,35 @@ const VehiclesPage = () => {
                         <span className={isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400' : 'text-white'}>
                           {vehicle.displayName || vehicle.name}
                         </span>
+                        
+                        {/* L и R иконки для локальных изменений */}
+                        {localEdits?.includes(vehicle.name) && (
+                          <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center text-white text-xs font-bold" title="Локально отредактирован">
+                            L
+                          </div>
+                        )}
+                        {restartRequired?.includes(vehicle.name) && (
+                          <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-white text-xs font-bold" title="Требуется рестарт">
+                            R
+                          </div>
+                        )}
+                        
+                        {/* Кнопка избранного */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation() // Предотвращаем выбор машины при клике на звездочку
+                            toggleFavorite(vehicle.name)
+                          }}
+                          className={`p-1 rounded transition-colors ${
+                            isFavorite(vehicle.name)
+                              ? 'text-yellow-400 hover:text-yellow-300'
+                              : 'text-gray-500 hover:text-yellow-400'
+                          }`}
+                          title={isFavorite(vehicle.name) ? 'Удалить из избранного' : 'Добавить в избранное'}
+                        >
+                          <Star className={`w-4 h-4 ${isFavorite(vehicle.name) ? 'fill-current' : ''}`} />
+                        </button>
+                        
                         {isPendingRestart && (
                           <span className="inline-flex items-center h-5 px-2 text-[10px] leading-none rounded-full bg-orange-900 text-orange-300">Нужен рестарт</span>
                         )}
@@ -1272,7 +1580,9 @@ const VehiclesPage = () => {
                       <div className="flex items-center space-x-2">
                         <Car className="w-4 h-4 text-primary-400" />
                         <span className="text-xs text-gray-500">
-                          {'isGTAV' in vehicle && vehicle.isGTAV ? 'GTA V' : `size` in vehicle ? `${(vehicle.size / 1024 / 1024).toFixed(1)}MB` : 'N/A'}
+                          {'isGTAV' in vehicle && vehicle.isGTAV ? 'GTA V' : 
+                           'isLocal' in vehicle && vehicle.isLocal ? 'Local' :
+                           `size` in vehicle && vehicle.size > 0 ? `${(vehicle.size / 1024 / 1024).toFixed(1)}MB` : 'N/A'}
                         </span>
                       </div>
                       
@@ -1285,6 +1595,16 @@ const VehiclesPage = () => {
                             disabled={!isAvailable}
                             className="p-2 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Заспавнить GTA V автомобиль"
+                          >
+                            <Play className="w-4 h-4" />
+                          </button>
+                        ) : 'isLocal' in vehicle && vehicle.isLocal ? (
+                          // Для локальных машин - только спавн
+                          <button
+                            onClick={handleSpawn}
+                            disabled={!isAvailable}
+                            className="p-2 text-green-400 hover:text-green-300 hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Заспавнить локальный автомобиль"
                           >
                             <Play className="w-4 h-4" />
                           </button>
@@ -1376,7 +1696,27 @@ const VehiclesPage = () => {
           {/* Header over both panels - скрыть в режиме фокуса */}
           {focusMode === 'off' && (
             <div
-              className="w-[1880px] max-w-[calc(100vw-480px)] rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
+              className={`rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left ${
+                // Динамическая ширина на основе количества видимых панелей
+                (() => {
+                  const visiblePanels = [
+                    showTuning && selectedVehicle && (
+                      (vehicleStatuses.get(selectedVehicle.id) as string) === 'downloaded' || 
+                      ('isGTAV' in selectedVehicle && (selectedVehicle as any).isGTAV) ||
+                      ('isLocal' in selectedVehicle && (selectedVehicle as any).isLocal)
+                    ),
+                    showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle),
+                    showActions && selectedVehicle
+                  ].filter(Boolean).length
+                  
+                  // Базовые размеры: 620px на панель + 12px отступы
+                  
+                  return visiblePanels === 0 ? 'w-full max-w-[calc(100vw-480px)]' :
+                         visiblePanels === 1 ? 'w-[620px]' :
+                         visiblePanels === 2 ? 'w-[1252px]' :
+                         'w-[1884px]'
+                })()
+              }`}
               title="Скрыть/показать панели"
               onClick={() => {
                 setPanelsVisible(v => {
@@ -1402,55 +1742,49 @@ const VehiclesPage = () => {
             </div>
           )}
           <div className="flex space-x-3 flex-1 overflow-hidden">
-          {/* Tuning sliders panel - показывать если фокус выкл или фокус на тюнинге */}
-          {(() => {
-            const vehicleStatus = selectedVehicle ? vehicleStatuses.get(selectedVehicle.id) : null
-            console.log('[TuningPanel] Check visibility:')
-            console.log('  - focusMode:', focusMode)
-            console.log('  - showTuning:', showTuning)
-            console.log('  - selectedVehicle:', selectedVehicle?.name)
-            console.log('  - vehicleStatus:', vehicleStatus)
-            console.log('  - shouldShow:', (focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && vehicleStatus === 'downloaded')
-            return null
-          })()}
-          {(focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && (
-            vehicleStatuses.get(selectedVehicle.id) === 'downloaded' || 
-            ('isGTAV' in selectedVehicle && selectedVehicle.isGTAV)
-          ) && (
-            <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
-              <div className="text-sm font-semibold text-white mb-3">Параметры</div>
-              <TuningSliders
-                onChange={(param, value) => updateHandling(param, value)}
-                onReset={() => {
-                  // Для GTAV машин - перезагружаем оригинальный handling из локального индекса
-                  if (selectedVehicle && 'isGTAV' in selectedVehicle && selectedVehicle.isGTAV) {
-                    console.log('[VehiclesPage] Resetting GTAV vehicle - reloading original handling')
-                    requestHandlingMeta(selectedVehicle.name, 'gtav')
-                  } else {
-                    // Для кастомных машин - обычный сброс
-                    resetHandling()
-                  }
-                }}
-                onXmlPatch={(param, value) => {
-                  const tag = paramToXmlTag[param]
-                  if (!tag || !handlingMetaXml) return
-                  setHandlingMetaXml(prev => updateXmlNumericValue(prev, tag, value))
-                }}
-                disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
-                initialValues={handlingMetaXml}
-                vehicleKey={selectedVehicle.name}
-                currentXml={handlingMetaXml}
-                onFocusModeToggle={() => setFocusMode(focusMode === 'tuning' ? 'off' : 'tuning')}
-                focusMode={focusMode === 'tuning'}
-                archiveId={selectedVehicle.id}
-              />
-            </div>
+            {(focusMode === 'off' || focusMode === 'tuning') && showTuning && selectedVehicle && (
+              (vehicleStatuses.get(selectedVehicle.id) as string) === 'downloaded' || 
+              ('isGTAV' in selectedVehicle && (selectedVehicle as any).isGTAV) ||
+              ('isLocal' in selectedVehicle && (selectedVehicle as any).isLocal)
+            ) && (
+              <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+                <div className="text-sm font-semibold text-white mb-3">Параметры</div>
+                <TuningSliders
+                  onChange={(param, value) => updateHandling(param, value)}
+                  onReset={() => {
+                    // Для GTAV машин - перезагружаем оригинальный handling из локального индекса
+                    if (selectedVehicle && 'isGTAV' in selectedVehicle && selectedVehicle.isGTAV) {
+                      console.log('[VehiclesPage] Resetting GTAV vehicle - reloading original handling')
+                      requestHandlingMeta(selectedVehicle.name, 'gtav')
+                    } else {
+                      // Для кастомных машин - обычный сброс
+                      resetHandling()
+                    }
+                  }}
+                  onXmlPatch={(param, value) => {
+                    const tag = paramToXmlTag[param]
+                    if (!tag || !handlingMetaXml) return
+                    setHandlingMetaXml(prev => updateXmlNumericValue(prev, tag, value))
+                    setHighlightedXmlParam(tag)
+                  }}
+                  disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
+                  initialValues={handlingMetaXml}
+                  vehicleKey={selectedVehicle.name}
+                  currentXml={handlingMetaXml}
+                  onFocusModeToggle={() => setFocusMode(focusMode === 'tuning' ? 'off' : 'tuning')}
+                  focusMode={focusMode === 'tuning'}
+                />
+              </div>
           )}
           {/* Handling.meta editor panel */}
           {focusMode === 'off' && showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle) && (
             <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-2">handling.meta</div>
-              <HandlingMetaEditor xml={handlingMetaXml} onXmlChange={setHandlingMetaXml} />
+              <HandlingMetaEditor 
+                xml={handlingMetaXml} 
+                onXmlChange={setHandlingMetaXml}
+                highlightedParam={highlightedXmlParam}
+              />
             </div>
           )}
           
@@ -2348,6 +2682,11 @@ function App() {
   }, [currentPage])
   const [, forceUpdate] = useState({})
   
+  // Настраиваем обработчики авторизации для ALT:V
+  useEffect(() => {
+    setupAltVAuthHandlers()
+  }, [])
+
   // Логируем информацию о пути при загрузке
   useEffect(() => {
     console.log('[App] 🚀 App component mounted')

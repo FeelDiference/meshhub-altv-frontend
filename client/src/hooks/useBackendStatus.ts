@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { API_CONFIG } from '@/config/api'
 
-export type BackendStatus = 'checking' | 'connected' | 'mock' | 'error'
+export type BackendStatus = 'checking' | 'connected' | 'error'
 
 export function useBackendStatus() {
   const [status, setStatus] = useState<BackendStatus>('checking')
@@ -20,13 +20,10 @@ export function useBackendStatus() {
       if (response.ok) {
         return 'connected'
       } else {
-        return 'mock'
+        return 'error'
       }
     } catch (error) {
-      // В dev режиме при ошибке сети переключаемся на mock
-      if (process.env.NODE_ENV === 'development') {
-        return 'mock'
-      }
+      // Всегда возвращаем ошибку если backend недоступен
       return 'error'
     }
   }
@@ -54,17 +51,10 @@ export function useBackendStatus() {
       setLastCheck(new Date())
     }
 
-    const handleAuthMock = () => {
-      setStatus('mock')
-      setLastCheck(new Date())
-    }
-
     window.addEventListener('auth:backend-success', handleAuthSuccess)
-    window.addEventListener('auth:mock-fallback', handleAuthMock)
 
     return () => {
       window.removeEventListener('auth:backend-success', handleAuthSuccess)
-      window.removeEventListener('auth:mock-fallback', handleAuthMock)
     }
   }, [])
 
@@ -73,7 +63,6 @@ export function useBackendStatus() {
     lastCheck,
     refreshStatus,
     isConnected: status === 'connected',
-    isMock: status === 'mock',  
     isChecking: status === 'checking',
     isError: status === 'error',
   }

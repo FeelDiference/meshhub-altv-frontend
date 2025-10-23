@@ -15,7 +15,7 @@ interface LoginFormProps {
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const { login, isLoading, error, clearError } = useAuth()
-  const { status, isConnected, isMock, isChecking } = useBackendStatus()
+  const { status, isConnected, isChecking } = useBackendStatus()
   
   const [formData, setFormData] = useState<LoginRequest>({
     email: '',
@@ -124,7 +124,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             MeshHub ALT:V
           </h1>
           <p className="text-gray-400 text-sm">
-            Вход в систему управления автомобилями
+            Система управления ресурсами и контентом
           </p>
         </div>
 
@@ -208,12 +208,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             <>
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span>Подключено к hub.feeld.space</span>
-            </>
-          )}
-          {isMock && (
-            <>
-              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-              <span>Demo режим (Mock авторизация)</span>
             </>
           )}
           {status === 'error' && (

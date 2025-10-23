@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Wrench, Palette, Car, Settings } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Wrench, Palette, Car, Settings, ArrowUp, ArrowDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface VehicleTuningProps {
@@ -20,6 +20,54 @@ interface VehicleColor {
   id: number
   name: string
   hex: string
+}
+
+// Словарь названий параметров автомобиля
+const VEHICLE_PARAM_NAMES: Record<string, string> = {
+  speed: 'Скорость',
+  acceleration: 'Ускорение',
+  braking: 'Торможение',
+  traction: 'Сцепление',
+  handling: 'Управляемость',
+  weight: 'Вес',
+  downforce: 'Прижимная сила',
+  drag: 'Аэродинамика'
+}
+
+// Влияние модов на характеристики автомобиля (GTA V)
+/* const TUNING_MODIFIERS: Record<number, Record<string, number>> = {
+  11: { // Двигатель
+    speed: 5,
+    acceleration: 10
+  },
+  12: { // Тормоза
+    braking: 15
+  },
+  13: { // Трансмиссия
+    acceleration: 8,
+    speed: 3
+  },
+  15: { // Подвеска
+    handling: 10,
+    traction: 5
+  },
+  16: { // Броня
+    weight: 50
+  },
+  18: { // Турбо
+    acceleration: 20,
+    speed: 10
+  },
+  0: { // Спойлеры
+    downforce: 15,
+    handling: 5
+  }
+} */
+
+// Функция для форматирования модификатора
+const formatVehicleModifier = (_key: string, value: number): string => {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value}%`
 }
 
 // Словарь человеческих названий и технических названий
@@ -74,6 +122,125 @@ const CATEGORY_NAMES: Record<number, { human: string; technical: string }> = {
   47: { human: 'Дверь правая', technical: 'VMT_DOOR_R' },
   48: { human: 'Ливрея', technical: 'VMT_LIVERY_MOD' },
   49: { human: 'Проблесковые маячки', technical: 'VMT_LIGHTBAR' }
+}
+
+// Кеш для уже проверенных машин
+const vehicleTuningCache = new Map<string, { checked: boolean, availableCategories: number[] }>()
+
+// Максимальное количество одновременных запросов
+const MAX_CONCURRENT_REQUESTS = 3
+let currentRequests = 0
+
+// Функция для определения ванильной машины
+const isVanillaVehicleCheck = (vehicleName: string): boolean => {
+  if (!vehicleName) return true // Если нет имени, считаем ванильной
+
+  // Проверяем кеш сначала
+  if (vehicleTuningCache.has(vehicleName)) {
+    return vehicleTuningCache.get(vehicleName)!.checked
+  }
+
+  // Список префиксов для кастомных машин (из лога видно baze_* машины)
+  const customPrefixes = ['baze_', 'custom_', 'mod_']
+
+  // Проверяем, начинается ли имя с кастомного префикса
+  const isVanilla = !customPrefixes.some(prefix => vehicleName.toLowerCase().startsWith(prefix))
+
+  // Сохраняем в кеш
+  vehicleTuningCache.set(vehicleName, { checked: isVanilla, availableCategories: [] })
+
+  return isVanilla
+}
+
+// Стандартные машины GTA5 (из GTAV vehicles sync)
+const VANILLA_VEHICLES = new Set([
+  'adder', 'airbus', 'airtug', 'akula', 'akuma', 'ambulance', 'annihilator', 'armytanker', 'armytrailer',
+  'armytrailer2', 'asea', 'asea2', 'asterope', 'autarch', 'avarus', 'avenger', 'avenger2', 'bagger',
+  'baletrailer', 'baller', 'baller2', 'baller3', 'baller4', 'baller5', 'baller6', 'banshee', 'banshee2',
+  'barracks', 'barracks2', 'barracks3', 'bati', 'bati2', 'benson', 'besra', 'bestiagts', 'bf400',
+  'bfinjection', 'biff', 'bifta', 'bison', 'bison2', 'bison3', 'bjxl', 'blade', 'blazer', 'blazer2',
+  'blazer3', 'blazer4', 'blazer5', 'blimp', 'blimp2', 'blimp3', 'blista', 'blista2', 'blista3', 'bloader',
+  'blazer5', 'bobcatxl', 'bodhi2', 'bombushka', 'boxville', 'boxville2', 'boxville3', 'boxville4',
+  'boxville5', 'brawler', 'brickade', 'brioso', 'brioso2', 'bruiser', 'bruiser2', 'bruiser3', 'brutus',
+  'brutus2', 'brutus3', 'btype', 'btype2', 'btype3', 'buccaneer', 'buccaneer2', 'buffalo', 'buffalo2',
+  'buffalo3', 'bulldozer', 'bullet', 'burrito', 'burrito2', 'burrito3', 'burrito4', 'burrito5', 'bus',
+  'buzzard', 'buzzard2', 'cablecar', 'caddy', 'caddy2', 'caddy3', 'calico', 'camper', 'caracara',
+  'caracara2', 'carbonizzare', 'carbonrs', 'cargobob', 'cargobob2', 'cargobob3', 'cargobob4',
+  'cargoplane', 'casco', 'cavalcade', 'cavalcade2', 'cerberus', 'cerberus2', 'cerberus3', 'cheburek',
+  'cheetah', 'cheetah2', 'chernobog', 'chimera', 'chino', 'chino2', 'cliffhanger', 'clique', 'club',
+  'coach', 'cog55', 'cog552', 'cognoscenti', 'cognoscenti2', 'comet2', 'comet3', 'comet4', 'comet5',
+  'contender', 'coquette', 'coquette2', 'coquette3', 'cruiser', 'crusader', 'cuban800', 'cutter',
+  'cyclone', 'cypher', 'daemon', 'daemon2', 'deathbike', 'deathbike2', 'deathbike3', 'defiler',
+  'deluxo', 'deveste', 'deviant', 'diablous', 'diablous2', 'dilettante', 'dilettante2', 'dinghy',
+  'dinghy2', 'dinghy3', 'dinghy4', 'dk200', 'dloader', 'docktrailer', 'docktug', 'dodo', 'dominator',
+  'dominator2', 'dominator3', 'dominator4', 'dominator5', 'dominator6', 'doubledozer', 'drafter',
+  'dubsta', 'dubsta2', 'dubsta3', 'dukes', 'dukes2', 'dukes3', 'dump', 'dune', 'dune2', 'dune3',
+  'dune4', 'dune5', 'duster', 'elegy', 'elegy2', 'ellie', 'emerus', 'emperor', 'emperor2', 'emperor3',
+  'enduro', 'entity2', 'entity3', 'entityxf', 'esskey', 'euros', 'everon', 'exemplar', 'f620', 'faction',
+  'faction2', 'faction3', 'fagaloa', 'faggio', 'faggio2', 'faggio3', 'fbi', 'fbi2', 'fcr', 'fcr2',
+  'felon', 'felon2', 'feltzer2', 'feltzer3', 'firetruk', 'fixter', 'flashgt', 'flatbed', 'fmj',
+  'forklift', 'formula', 'formula2', 'fq2', 'freecrawler', 'freight', 'freightcar', 'freightcar2',
+  'freightcont1', 'freightcont2', 'freightgrain', 'freighttrailer', 'frogger', 'frogger2', 'fugitive',
+  'furoregt', 'fusilade', 'futo', 'gargoyle', 'gauntlet', 'gauntlet2', 'gauntlet3', 'gauntlet4',
+  'gauntlet5', 'gb200', 'gburrito', 'gburrito2', 'glendale', 'glendale2', 'gnat', 'golfcart',
+  'gp1', 'graintrailer', 'granger', 'granger2', 'greenwood', 'gresley', 'growler', 'gt500', 'guardian',
+  'habanero', 'hakuchou', 'hakuchou2', 'halftrack', 'handler', 'hauler', 'hauler2', 'havok',
+  'hellion', 'hermes', 'hexer', 'hotknife', 'hotring', 'howard', 'hunter', 'huntley', 'hustler',
+  'hydra', 'imorgon', 'impaler', 'impaler2', 'impaler3', 'impaler4', 'imperator', 'imperator2',
+  'imperator3', 'infernus', 'infernus2', 'ingot', 'innovation', 'insurgent', 'insurgent2', 'insurgent3',
+  'intruder', 'issi2', 'issi3', 'issi4', 'issi5', 'issi6', 'issi7', 'italigtb', 'italigtb2', 'italirsx',
+  'jackal', 'jester', 'jester2', 'jester3', 'jester4', 'jet', 'jetmax', 'journey', 'jugular', 'kalahari',
+  'kamacho', 'kanjo', 'khamelion', 'khanjali', 'komoda', 'kosatka', 'krieger', 'kuruma', 'kuruma2',
+  'landstalker', 'landstalker2', 'lazer', 'le7b', 'lectro', 'lguard', 'limo2', 'lm87', 'locust',
+  'longfin', 'lurcher', 'luxor', 'luxor2', 'lynx', 'mamba', 'mammatus', 'manana', 'manana2', 'manchez',
+  'manchez2', 'marquis', 'marshall', 'massacro', 'massacro2', 'maverick', 'menacer', 'messer', 'metrotrain',
+  'michelli', 'microlight', 'miljet', 'minivan', 'minivan2', 'mixer', 'mixer2', 'mogul', 'molotok',
+  'monroe', 'monster', 'monster3', 'monster4', 'monster5', 'moonbeam', 'moonbeam2', 'mower', 'mule',
+  'mule2', 'mule3', 'mule4', 'mule5', 'nebula', 'nemesis', 'neo', 'neon', 'nero', 'nero2', 'nightblade',
+  'nightshade', 'nightshark', 'nimbus', 'ninef', 'ninef2', 'nokota', 'novak', 'omnis', 'oppressor',
+  'oppressor2', 'oracle', 'oracle2', 'osiris', 'outlaw', 'packer', 'panto', 'paradise', 'paragon',
+  'paragon2', 'pariah', 'patriot', 'patriot2', 'pbus', 'pbus2', 'pcj', 'penetrator', 'penumbra',
+  'peyote', 'peyote2', 'peyote3', 'pfister811', 'phantom', 'phantom2', 'phantom3', 'phoenix', 'picador',
+  'pigalle', 'police', 'police2', 'police3', 'police4', 'policeb', 'policeold1', 'policeold2', 'policet',
+  'polmav', 'pony', 'pony2', 'pounder', 'pounder2', 'prairie', 'pranger', 'predator', 'premier',
+  'previon', 'prototipo', 'pyro', 'radi', 'raiden', 'raketrailer', 'rallytruck', 'rancherxl',
+  'rancherxl2', 'rapidgt', 'rapidgt2', 'rapidgt3', 'raptor', 'ratbike', 'ratloader', 'ratloader2',
+  'rcbandito', 'reaper', 'rebel', 'rebel2', 'rebla', 'regina', 'rentalbus', 'rentalbus2', 'rentalbus3',
+  'retinue', 'retinue2', 'revolter', 'rhapsody', 'rhino', 'riata', 'ripley', 'rocoto', 'rogue',
+  'romero', 'rrocket', 'rt3000', 'rubble', 'ruffian', 'ruiner', 'ruiner2', 'ruiner3', 'rumpo',
+  'rumpo2', 'rumpo3', 'ruston', 's80', 'sabregt', 'sabregt2', 'sadler', 'sadler2', 'sanchez',
+  'sanchez2', 'sanctus', 'sandking', 'sandking2', 'savage', 'savestra', 'sc1', 'scarab', 'scarab2',
+  'scarab3', 'schafter2', 'schafter3', 'schafter4', 'schafter5', 'schafter6', 'schlagen', 'schwarzer',
+  'scorcher', 'scramjet', 'scrap', 'seabreeze', 'seashark', 'seashark2', 'seashark3', 'seasparrow',
+  'seminole', 'seminole2', 'sentinel', 'sentinel2', 'sentinel3', 'sentinel4', 'serrano', 'sextant',
+  'shamal', 'sheava', 'sheriff', 'sheriff2', 'shotaro', 'skyline', 'slamvan', 'slamvan2', 'slamvan3',
+  'slamvan4', 'slamvan5', 'slamvan6', 'sovereign', 'specter', 'specter2', 'speeder', 'speeder2',
+  'speedo', 'speedo2', 'speedo4', 'speedo5', 'squaddie', 'squalo', 'stafford', 'stalion', 'stalion2',
+  'stanier', 'starling', 'stinger', 'stingergt', 'stockade', 'stockade3', 'stratum', 'streiter',
+  'stretch', 'strikeforce', 'stromberg', 'stryder', 'stunt', 'submersible', 'submersible2', 'sultan',
+  'sultan2', 'sultan3', 'sultanrs', 'suntrap', 'superd', 'supervolito', 'supervolito2', 'surano',
+  'surfer', 'surfer2', 'surge', 'swift', 'swift2', 'swinger', 't20', 'taco', 'tahoma', 'tailgater',
+  'tailgater2', 'taipan', 'tampa', 'tampa2', 'tampa3', 'tanker', 'tanker2', 'tankercar', 'taxi',
+  'technical', 'technical2', 'technical3', 'tempesta', 'terbyte', 'tezeract', 'thrax', 'thrust',
+  'thunder', 'titan', 'toreador', 'torero', 'tornado', 'tornado2', 'tornado3', 'tornado4', 'tornado5',
+  'tornado6', 'toro', 'toro2', 'toros', 'tourbus', 'towtruck', 'towtruck2', 'tr2', 'tr3', 'tr4',
+  'tractor', 'tractor2', 'tractor3', 'trailerlarge', 'trailerlogs', 'trailers', 'trailers2', 'trailers3',
+  'trailers4', 'trailers5', 'trailertrash', 'trailertrash2', 'trash', 'trash2', 'trflat', 'trike',
+  'trike2', 'trike3', 'tropos', 'tropic', 'tropic2', 'trophytruck', 'trophytruck2', 'tropic', 'tropic2',
+  'tropos', 'tug', 'tula', 'tulip', 'turismo2', 'turismor', 'tvtrailer', 'tyrant', 'tyrus', 'vacca',
+  'vader', 'vagner', 'vagrant', 'valkyrie', 'valkyrie2', 'vamos', 'velum', 'velum2', 'verlierer2',
+  'verus', 'vestra', 'vetir', 'veto', 'veto2', 'vigero', 'vigilante', 'vindicator', 'virgo', 'virgo2',
+  'virgo3', 'viseris', 'visione', 'volatol', 'volatus', 'voltic', 'voltic2', 'voodoo', 'voodoo2',
+  'vortex', 'vstr', 'warrener', 'washington', 'wastelander', 'weevil', 'windsor', 'windsor2', 'winky',
+  'wolfsbane', 'xa21', 'xls', 'xls2', 'yosemite', 'yosemite2', 'yosemite3', 'youga', 'youga2',
+  'youga3', 'youga4', 'z190', 'zentorno', 'zombiea', 'zombieb', 'zorrusso', 'zr380', 'zr3802', 'zr3803'
+])
+
+const isVanillaVehicleCheck = (vehicleName: string): boolean => {
+  if (!vehicleName) return true // Если нет имени, считаем ванильной
+
+  // Проверяем в списке ванильных машин
+  return VANILLA_VEHICLES.has(vehicleName.toLowerCase())
 }
 
 const TUNING_CATEGORIES: TuningCategory[] = [
@@ -427,16 +594,49 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
   useEffect(() => {
     if (activeTab === 'tuning') {
       console.log('[VehicleTuning] 🔧 Starting auto-detect for vehicle:', vehicleName)
+
+      // Очищаем кеш для предыдущей машины
+      if (vehicleName) {
+        vehicleTuningCache.delete(vehicleName)
+      }
+
       // Сбрасываем доступные категории при смене машины
       setAvailableCategories([])
       setCategoryMods({})
       setCurrentMods({})
       setCategoryNames({})
-      
-      // Проверяем все категории на доступность
-      TUNING_CATEGORIES.forEach(category => {
-        loadCategoryMods(category.id)
-      })
+
+      // Определяем, является ли машина ванильной (стандартной GTA5)
+      const isVanillaVehicle = isVanillaVehicleCheck(vehicleName)
+
+      if (isVanillaVehicle) {
+        // Для ванильных машин проверяем только стандартные категории, чтобы избежать крашей
+        console.log('[VehicleTuning] 🚗 Detected vanilla vehicle - checking only standard categories')
+        const standardCategories = [11, 12, 13, 14, 15, 16, 23, 24] // Двигатель, Тормоза, Трансмиссия, Клаксон, Подвеска, Броня, Передние колёса, Задние колёса
+
+        // Проверяем с задержкой, чтобы не перегружать систему
+        standardCategories.forEach((categoryId, index) => {
+          // Ограничиваем количество одновременных запросов
+          const requestDelay = Math.floor(index / MAX_CONCURRENT_REQUESTS) * 200 + (index % MAX_CONCURRENT_REQUESTS) * 100
+
+          setTimeout(() => {
+            loadCategoryMods(categoryId)
+          }, requestDelay)
+        })
+      } else {
+        // Для кастомных машин проверяем все категории с ограничением
+        console.log('[VehicleTuning] 🚗 Detected custom vehicle - checking all categories')
+
+        // Проверяем с задержкой для кастомных машин тоже
+        TUNING_CATEGORIES.forEach((category, index) => {
+          // Ограничиваем количество одновременных запросов
+          const requestDelay = Math.floor(index / MAX_CONCURRENT_REQUESTS) * 150 + (index % MAX_CONCURRENT_REQUESTS) * 50
+
+          setTimeout(() => {
+            loadCategoryMods(category.id)
+          }, requestDelay)
+        })
+      }
     }
   }, [activeTab, vehicleName])
 
@@ -446,10 +646,19 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
 
     const handleModsResponse = (data: { categoryId: number; categoryName?: string; mods: any[]; currentMod: number; hasSlotName?: boolean }) => {
       const mods = data.mods || []
-      
+
       console.log(`[VehicleTuning] 📡 Received mods for category ${data.categoryId}: ${mods.length} mods`)
       console.log(`[VehicleTuning] 🏷️ Category name:`, data.categoryName)
       console.log(`[VehicleTuning] 🔍 Has slot name:`, data.hasSlotName)
+
+      // Обновляем кеш с доступными категориями
+      if (vehicleName && mods.length > 0) {
+        const cached = vehicleTuningCache.get(vehicleName)
+        if (cached && !cached.availableCategories.includes(data.categoryId)) {
+          cached.availableCategories.push(data.categoryId)
+          vehicleTuningCache.set(vehicleName, cached)
+        }
+      }
       
       // Сохраняем название категории
       if (data.categoryName) {
@@ -497,6 +706,7 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
       }
     }
   }, [])
+
 
   return (
     <div className="space-y-4">
@@ -648,30 +858,79 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
                   {loading ? (
                     <div className="text-sm text-gray-500">Загрузка...</div>
                   ) : (
-                    <div className="text-sm text-white">
+                    <div className="space-y-2">
+                      <div className="text-sm text-white">
+                        {(() => {
+                          const mods = categoryMods[selectedCategory] || []
+                          const currentMod = currentMods[selectedCategory] ?? -1
+                          
+                          if (mods.length === 0) {
+                            return 'Тюнинг недоступен'
+                          }
+                          
+                          if (currentMod === -1) return 'Стандарт'
+                          
+                          const mod = mods[currentMod]
+                          if (!mod) return `Мод #${currentMod + 1}`
+                          
+                          // Простое отображение названия мода
+                          const name = mod.name || `Мод #${currentMod + 1}`
+                          
+                          return (
+                            <div className="flex items-center justify-center">
+                              <span className="text-white">
+                                {name}
+                              </span>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                      
+                      {/* Отображение влияния на характеристики */}
                       {(() => {
                         const mods = categoryMods[selectedCategory] || []
                         const currentMod = currentMods[selectedCategory] ?? -1
                         
-                        if (mods.length === 0) {
-                          return 'Тюнинг недоступен'
-                        }
+                        if (currentMod === -1) return null
                         
-                        if (currentMod === -1) return 'Стандарт'
+                        const currentModData = mods[currentMod]
+                        if (!currentModData || !currentModData.modifiers) return null
                         
-                        const mod = mods[currentMod]
-                        if (!mod) return `Мод #${currentMod + 1}`
+                        const modifiers = currentModData.modifiers
                         
-       // Простое отображение названия мода
-       const name = mod.name || `Мод #${currentMod + 1}`
-       
-       return (
-         <div className="flex items-center justify-center">
-           <span className="text-white">
-             {name}
-           </span>
-         </div>
-       )
+                        if (Object.keys(modifiers).length === 0) return null
+                        
+                        return (
+                          <div className="bg-base-800/50 rounded-lg p-2 space-y-1 border border-base-700">
+                            <div className="text-xs text-gray-400 text-center mb-1 font-semibold">
+                              Влияние на характеристики:
+                            </div>
+                            {Object.entries(modifiers).map(([key, value]) => {
+                              const paramName = VEHICLE_PARAM_NAMES[key] || key
+                              const numericValue = typeof value === 'number' ? value : 0
+                              const formattedValue = formatVehicleModifier(key, numericValue)
+                              const isPositive = numericValue > 0
+                              const colorClass = isPositive ? 'text-green-400' : 'text-red-400'
+                              const ArrowIcon = isPositive ? ArrowUp : ArrowDown
+                              const bgClass = isPositive ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'
+                              
+                              return (
+                                <div 
+                                  key={key} 
+                                  className={`flex items-center justify-between gap-2 px-2 py-1 rounded border ${bgClass}`}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <ArrowIcon className={`w-3 h-3 ${colorClass}`} />
+                                    <span className="text-xs text-gray-300">{paramName}</span>
+                                  </div>
+                                  <span className={`text-xs font-bold ${colorClass}`}>
+                                    {formattedValue}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
                       })()}
                     </div>
                   )}

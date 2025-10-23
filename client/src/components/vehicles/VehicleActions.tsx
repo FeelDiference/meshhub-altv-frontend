@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Wrench, 
   Sparkles, 
@@ -17,7 +17,10 @@ import {
   DoorOpen,
   Car as CarIcon,
   Lock,
-  Unlock
+  Unlock,
+  Gauge,
+  Star,
+  MapPin
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import VehicleTuning from './VehicleTuning'
@@ -32,6 +35,48 @@ interface VehicleActionsProps {
 
 const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAction, onFocusModeToggle, focusMode = false, vehicleName }) => {
   const [showTuning, setShowTuning] = useState(false)
+  const [favorites, setFavorites] = useState<string[]>([])
+  
+  // Загрузка избранных действий при монтировании
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const alt = (window as any).alt
+      
+      // Запрашиваем избранное
+      alt.emit('favorites:vehicle-actions:load')
+      
+      // Слушаем ответ
+      const handleFavoritesResponse = (data: { favorites: string[] }) => {
+        console.log('[VehicleActions] Received favorites:', data.favorites)
+        setFavorites(data.favorites || [])
+      }
+      
+      alt.on('favorites:vehicle-actions:response', handleFavoritesResponse)
+      
+      return () => {
+        alt.off('favorites:vehicle-actions:response', handleFavoritesResponse)
+      }
+    }
+  }, [])
+  
+  // Переключение избранного
+  const toggleFavorite = (actionId: string) => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const alt = (window as any).alt
+      const isFavorite = favorites.includes(actionId)
+      
+      alt.emit('favorites:vehicle-action:toggle', { actionId })
+      
+      // Обновляем локальное состояние
+      setFavorites(prev => 
+        isFavorite 
+          ? prev.filter(id => id !== actionId)
+          : [...prev, actionId]
+      )
+      
+      toast.success(isFavorite ? 'Удалено из избранного' : 'Добавлено в избранное')
+    }
+  }
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
       (window as any).__focusMode = focusMode ? 'off' : 'actions'
@@ -42,6 +87,20 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
   }
   
   const handleAction = (action: string, data?: any) => {
+    console.log(`[VehicleActions] Action triggered: ${action}`)
+    
+    // Специальная обработка для спидометра - отправляем событие в Alt:V
+    if (action === 'speedometer_toggle') {
+      console.log(`[VehicleActions] Speedometer toggle - emitting to Alt:V`)
+      if (typeof window !== 'undefined' && 'alt' in window) {
+        (window as any).alt.emit('speedometer:toggle')
+        toast.success('Спидометр переключен')
+      } else {
+        toast.error('Alt:V API недоступен')
+      }
+      return
+    }
+    
     if (disabled) {
       toast.error('Вы должны быть в автомобиле для выполнения этого действия')
       return
@@ -88,7 +147,8 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       'door_rear_left': 'Задняя левая дверь',
       'door_rear_right': 'Задняя правая дверь',
       'door_hood': 'Капот',
-      'door_trunk': 'Багажник'
+      'door_trunk': 'Багажник',
+      'speedometer_toggle': 'Спидометр'
     }
     return names[action] || action
   }
@@ -147,6 +207,20 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
         { id: 'door_hood', label: 'Капот', icon: <CarIcon className="w-4 h-4" />, color: 'text-yellow-400' },
         { id: 'door_trunk', label: 'Багажник', icon: <CarIcon className="w-4 h-4" />, color: 'text-orange-400' }
       ]
+    },
+    {
+      title: 'Интерфейс',
+      icon: <Gauge className="w-4 h-4" />,
+      actions: [
+        { id: 'speedometer_toggle', label: 'Спидометр', icon: <Gauge className="w-4 h-4" />, color: 'text-cyan-400' }
+      ]
+    },
+    {
+      title: 'Тестирование',
+      icon: <MapPin className="w-4 h-4" />,
+      actions: [
+        { id: 'teleport_to_location', label: 'Телепорт на локацию', icon: <MapPin className="w-4 h-4" />, color: 'text-purple-400' }
+      ]
     }
   ]
 
@@ -184,26 +258,48 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
             </div>
             
             <div className="grid grid-cols-2 gap-2">
-              {group.actions.map((action) => (
-                <button
-                  key={action.id}
-                  onClick={() => handleAction(action.id)}
-                  disabled={disabled}
-                  className={`
-                    flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium
-                    transition-all duration-200 border
-                    ${disabled 
-                      ? 'bg-gray-800/50 border-gray-700 text-gray-500 cursor-not-allowed' 
-                      : 'bg-base-800/50 border-base-600 hover:bg-base-700 hover:border-base-500 text-white hover:scale-[1.02]'
-                    }
-                  `}
-                >
-                  <div className={`${action.color} ${disabled ? 'opacity-50' : ''}`}>
-                    {action.icon}
+              {group.actions.map((action) => {
+                const isFavorite = favorites.includes(action.id)
+                return (
+                  <div key={action.id} className="relative group/action-btn">
+                    <button
+                      onClick={() => handleAction(action.id)}
+                      disabled={disabled}
+                      className={`
+                        w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium
+                        transition-all duration-200 border
+                        ${disabled 
+                          ? 'bg-gray-800/50 border-gray-700 text-gray-500 cursor-not-allowed' 
+                          : 'bg-base-800/50 border-base-600 hover:bg-base-700 hover:border-base-500 text-white hover:scale-[1.02]'
+                        }
+                      `}
+                    >
+                      <div className={`${action.color} ${disabled ? 'opacity-50' : ''}`}>
+                        {action.icon}
+                      </div>
+                      <span className="truncate flex-1 text-left">{action.label}</span>
+                    </button>
+                    
+                    {/* Звездочка избранного */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleFavorite(action.id)
+                      }}
+                      className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center rounded-full bg-base-900 border border-base-600 opacity-0 group-hover/action-btn:opacity-100 hover:scale-110 transition-all duration-200 z-10"
+                      title={isFavorite ? 'Удалить из избранного' : 'Добавить в избранное'}
+                    >
+                      <Star 
+                        className={`w-3 h-3 transition-colors ${
+                          isFavorite 
+                            ? 'fill-yellow-400 text-yellow-400' 
+                            : 'text-gray-400 hover:text-yellow-400'
+                        }`}
+                      />
+                    </button>
                   </div>
-                  <span className="truncate">{action.label}</span>
-                </button>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}

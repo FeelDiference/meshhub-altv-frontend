@@ -25,6 +25,11 @@ export interface WebViewToClientEvents {
   'handling:meta:request': { modelName: string; vehicleCategory?: 'gtav' | 'local' | 'meshhub' }
   'handling:reset': void
   'panel:close': void
+  // Интерьеры (MLO)
+  'meshhub:interior:download': { interiorId: string; interiorName: string; token: string }
+  'meshhub:interior:teleport': { interiorId: string; archetypeName: string; position: Vec3 }
+  'meshhub:interior:check': { interiorId: string; interiorName: string }
+  'meshhub:interior:list:request': {}
 }
 
 // События Client → WebView
@@ -40,6 +45,10 @@ export interface ClientToWebViewEvents {
   'handling:meta:response': { modelName: string; xml: string }
   'meshhub:vehicle:handling:meta:response': { modelName: string; xml: string }
   'meshhub:vehicle:local:list:response': ALTVVehicle[]
+  // Интерьеры (MLO)
+  'meshhub:interior:download:response': { success: boolean; message: string; interiorId?: string; alreadyExists?: boolean }
+  'meshhub:interior:check:response': { interiorName: string; exists: boolean; error?: string }
+  'meshhub:interior:list:response': { interiors: string[]; error?: string }
 }
 
 // События Server → Client

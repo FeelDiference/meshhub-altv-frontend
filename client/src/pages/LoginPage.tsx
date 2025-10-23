@@ -52,19 +52,24 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
           <LoginForm onSuccess={onSuccess} />
         </motion.div>
 
-        {/* Информация о WebView */}
+        {/* Ссылка на MeshHub */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1, duration: 0.4 }}
           className="mt-8 text-center"
         >
-          <div className="inline-flex items-center space-x-2 px-4 py-2 bg-base-800/50 rounded-lg border border-base-700/50">
+          <a 
+            href="https://hub.feeld.space" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center space-x-2 px-4 py-2 bg-base-800/50 rounded-lg border border-base-700/50 hover:border-primary-500/50 hover:bg-base-700/50 transition-all"
+          >
             <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse" />
-            <span className="text-xs text-gray-400">
-              ALT:V WebView Panel | 400px × 1080px
+            <span className="text-xs text-gray-400 hover:text-primary-400 transition-colors">
+              hub.feeld.space
             </span>
-          </div>
+          </a>
         </motion.div>
 
         {/* Клавиши управления */}

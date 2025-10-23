@@ -64,7 +64,13 @@ export async function uploadHandlingModification(data: {
   formData.append('archive_id', data.archiveId)
   formData.append('modified_content', data.modifiedContent)
   
-  console.log('[uploadService] FormData prepared, sending POST /upload...')
+  console.log('[uploadService] FormData prepared:')
+  console.log('  - file:', blob.size, 'bytes, type:', blob.type)
+  console.log('  - upload_type:', 'handling_modification')
+  console.log('  - resource_name:', data.resourceName)
+  console.log('  - archive_id:', data.archiveId)
+  console.log('  - modified_content length:', data.modifiedContent.length)
+  console.log('[uploadService] Sending POST /upload to', api.defaults.baseURL)
   
   try {
     const response = await api.post('/upload', formData, {
