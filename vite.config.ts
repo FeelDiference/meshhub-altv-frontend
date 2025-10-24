@@ -12,9 +12,10 @@ export default defineConfig({
     },
   },
   build: {
-    // Билдим сразу в правильную папку ALT:V сервера
+    // Билдим в client/ (там же где script.js и модули)
     outDir: '../../altv-server/resources/meshhub/client',
-    emptyOutDir: true, // Автоматически очищает старые файлы перед каждой сборкой
+    emptyOutDir: false, // НЕ очищаем - там script.js и модули
+    // prebuild скрипт очистит только assets/
   },
   server: {
     port: 3000,

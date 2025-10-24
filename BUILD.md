@@ -11,10 +11,10 @@ npm run build
 
 ## Что происходит при сборке?
 
-1. ✅ **Очистка старых файлов** - автоматически удаляются все старые билды
+1. ✅ **Очистка старых файлов** - автоматически удаляются старые билды из `client/assets/`
 2. ✅ **Компиляция TypeScript** - проверка типов и транспиляция
 3. ✅ **Сборка Vite** - оптимизация и минификация
-4. ✅ **Автодеплой** - файлы сразу попадают в `../altv-server/resources/meshhub/client/`
+4. ✅ **Автодеплой** - файлы попадают в `../altv-server/resources/meshhub/client/`
 
 ## Куда попадают файлы?
 
@@ -23,8 +23,10 @@ meshhub_altv_integration/
 └── npm run build
          ↓
 ../altv-server/resources/meshhub/client/
-├── index.html                   ← Точка входа WebView
-└── assets/                      ← Минифицированные JS и CSS
+├── script.js                    ← ALT:V клиентский скрипт (НЕ трогается)
+├── modules/                     ← ALT:V модули (НЕ трогаются)
+├── index.html                   ← Точка входа WebView (обновляется)
+└── assets/                      ← React билд (очищается и обновляется)
     ├── index-[hash].js          ← Основной бандл
     ├── index-[hash].css         ← Стили
     └── uploadService-[hash].js  ← Чанк для загрузок
