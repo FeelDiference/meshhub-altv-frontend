@@ -21,10 +21,13 @@ import {
   Gauge,
   Star,
   MapPin,
-  Box
+  Box,
+  Timer,
+  MapPinned
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import VehicleTuning from './VehicleTuning'
+import SpeedTestPanel from './SpeedTestPanel'
 
 interface VehicleActionsProps {
   disabled?: boolean
@@ -37,6 +40,7 @@ interface VehicleActionsProps {
 
 const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAction, onFocusModeToggle, focusMode = false, vehicleName, onYftViewerToggle }) => {
   const [showTuning, setShowTuning] = useState(false)
+  const [showSpeedTest, setShowSpeedTest] = useState(false)
   const [favorites, setFavorites] = useState<string[]>([])
   
   // Загрузка избранных действий при монтировании
@@ -111,6 +115,18 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       if (typeof window !== 'undefined' && 'alt' in window) {
         (window as any).alt.emit('speedometer:toggle')
         toast.success('Спидометр переключен')
+      } else {
+        toast.error('Alt:V API недоступен')
+      }
+      return
+    }
+    
+    // Телепорт на старт Speed Test трассы (работает с машиной и без)
+    if (action === 'teleport_to_location') {
+      console.log(`[VehicleActions] Teleport to Speed Test track requested`)
+      if (typeof window !== 'undefined' && 'alt' in window) {
+        (window as any).alt.emit('speedtest:teleport:track')
+        toast.success('Телепорт на старт трассы...')
       } else {
         toast.error('Alt:V API недоступен')
       }
@@ -235,7 +251,7 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       title: 'Тестирование',
       icon: <MapPin className="w-4 h-4" />,
       actions: [
-        { id: 'teleport_to_location', label: 'Телепорт на локацию', icon: <MapPin className="w-4 h-4" />, color: 'text-purple-400' },
+        { id: 'teleport_to_location', label: 'Телепорт на трассу', icon: <MapPinned className="w-4 h-4" />, color: 'text-green-400' },
         { id: 'yft_viewer', label: 'YFT Viewer (3D)', icon: <Box className="w-4 h-4" />, color: 'text-cyan-400' }
       ]
     }
@@ -347,6 +363,36 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
           {showTuning && !disabled && (
             <div className="animate-slide-in-left">
               <VehicleTuning disabled={disabled} vehicleName={vehicleName} />
+            </div>
+          )}
+        </div>
+
+        {/* Блок Speed Test как складной раздел */}
+        <div className="space-y-2 mt-4 pt-4 border-t border-base-700">
+          <button
+            onClick={() => setShowSpeedTest(!showSpeedTest)}
+            disabled={disabled}
+            className={`w-full flex items-center justify-between p-3 rounded-lg transition-all duration-200 border ${
+              disabled
+                ? 'bg-gray-800/50 border-gray-700 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-blue-900/30 to-cyan-900/30 border-blue-500/50 hover:border-blue-400 text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Timer className={`w-4 h-4 ${disabled ? 'text-gray-500' : 'text-blue-400'}`} />
+              <span className="text-sm font-semibold">Тесты скорости</span>
+            </div>
+            {showSpeedTest ? (
+              <ChevronDown className="w-4 h-4 text-blue-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
+
+          {/* Содержимое Speed Test */}
+          {showSpeedTest && !disabled && (
+            <div className="animate-slide-in-left">
+              <SpeedTestPanel />
             </div>
           )}
         </div>
