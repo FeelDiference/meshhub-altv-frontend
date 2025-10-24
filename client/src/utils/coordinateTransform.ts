@@ -43,10 +43,10 @@ export interface CameraSyncData {
   camera: {
     position: Vec3      // Относительная позиция камеры (относительно машины)
     rotation: Vec3      // Вращение камеры в градусах (pitch, roll, yaw)
-    fov: number         // Field of View
+    // FOV убран - не синхронизируется из игры, используется статичный
   }
   vehicle: {
-    rotation: Vec3  // Вращение машины в градусах
+    rotation: Vec3  // Вращение машины в градусах (pitch, roll, yaw для наклонов!)
   }
   debug?: {
     camWorldPos: Vec3
@@ -223,7 +223,7 @@ export function transformSyncDataForThreeJS(
   return {
     position: convertCameraPosition(cameraPos),
     rotation: convertCameraRotation(cameraRot),
-    fov: convertCameraFov(syncData.camera.fov),
+    // FOV больше не синхронизируется
     vehicleRotation: syncData.vehicle.rotation,
     debug: syncData.debug
   }
@@ -235,7 +235,6 @@ export function transformSyncDataForThreeJS(
 export class CameraSyncSmoother {
   private currentPosition: Vec3 = { x: 0, y: 0, z: 0 }
   private currentRotation: Vec3 = { x: 0, y: 0, z: 0 }
-  private currentFov: number = 60
   
   // Фактор сглаживания (0-1): чем ближе к 1, тем быстрее реакция
   private readonly smoothFactor = 0.7
@@ -243,20 +242,18 @@ export class CameraSyncSmoother {
   /**
    * Обновляет текущее состояние с сглаживанием
    */
-  update(targetPosition: Vec3, targetRotation: Vec3, targetFov: number) {
+  update(targetPosition: Vec3, targetRotation: Vec3) {
     // Плавно интерполируем к целевым значениям
     this.currentPosition = lerpVec3(this.currentPosition, targetPosition, this.smoothFactor)
     this.currentRotation = slerpRotation(this.currentRotation, targetRotation, this.smoothFactor)
-    this.currentFov = lerp(this.currentFov, targetFov, this.smoothFactor)
   }
   
   /**
    * Сбрасывает к целевым значениям мгновенно (без сглаживания)
    */
-  reset(position: Vec3, rotation: Vec3, fov: number) {
+  reset(position: Vec3, rotation: Vec3) {
     this.currentPosition = { ...position }
     this.currentRotation = { ...rotation }
-    this.currentFov = fov
   }
   
   /**
@@ -265,8 +262,7 @@ export class CameraSyncSmoother {
   getCurrent() {
     return {
       position: { ...this.currentPosition },
-      rotation: { ...this.currentRotation },
-      fov: this.currentFov
+      rotation: { ...this.currentRotation }
     }
   }
 }
@@ -277,8 +273,11 @@ export class CameraSyncSmoother {
 export function logSyncData(syncData: CameraSyncData, label: string = 'Sync') {
   console.log(`[${label}] Camera:`, {
     pos: `(${syncData.camera.position.x.toFixed(2)}, ${syncData.camera.position.y.toFixed(2)}, ${syncData.camera.position.z.toFixed(2)})`,
-    rot: `(${syncData.camera.rotation.x.toFixed(1)}°, ${syncData.camera.rotation.y.toFixed(1)}°, ${syncData.camera.rotation.z.toFixed(1)}°)`,
-    fov: syncData.camera.fov.toFixed(1)
+    rot: `(${syncData.camera.rotation.x.toFixed(1)}°, ${syncData.camera.rotation.y.toFixed(1)}°, ${syncData.camera.rotation.z.toFixed(1)}°)`
+  })
+  
+  console.log(`[${label}] Vehicle:`, {
+    rot: `(${syncData.vehicle.rotation.x.toFixed(1)}°, ${syncData.vehicle.rotation.y.toFixed(1)}°, ${syncData.vehicle.rotation.z.toFixed(1)}°)`
   })
   
   if (syncData.debug) {

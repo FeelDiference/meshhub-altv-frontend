@@ -134,15 +134,33 @@ function VehicleModel({
     const DEG_TO_RAD = Math.PI / 180
     
     if (gameViewMode && vehicleRotation) {
-      // В Game View: калибровочный поворот (если есть) или базовый + вращение автомобиля из игры
+      // В Game View: калибровочный поворот + вращение автомобиля из игры (НАКЛОНЫ!)
       const baseRot = calibration?.modelRotation || 
         { x: 90, y: 180, z: 180 } // Дефолт из YFT_GAME_VIEW_ROTATION
       
-      return [
-        baseRot.x * DEG_TO_RAD + vehicleRotation.x * DEG_TO_RAD,
-        baseRot.y * DEG_TO_RAD + vehicleRotation.y * DEG_TO_RAD,
-        baseRot.z * DEG_TO_RAD + vehicleRotation.z * DEG_TO_RAD
-      ]
+      // ВАЖНО: После поворота модели (90°X, 180°Y, 180°Z) оси GTA не совпадают с осями Three.js!
+      // Экспериментально подобранный маппинг (поменяли X и Y местами):
+      // GTA pitch (X - продольный наклон нос вверх/вниз) → Three.js Y (зеленая)
+      // GTA roll (Y - крен левое/правое колесо) → Three.js X (красная)
+      // GTA yaw (Z - поворот на колесах) → Three.js Z (синяя ось) ✅
+      
+      const finalRotation = [
+        baseRot.x * DEG_TO_RAD - vehicleRotation.y * DEG_TO_RAD,  // X (красная): roll машины (крен)
+        baseRot.y * DEG_TO_RAD - vehicleRotation.x * DEG_TO_RAD,  // Y (зеленая): -pitch машины (инвертирован!)
+        baseRot.z * DEG_TO_RAD + vehicleRotation.z * DEG_TO_RAD   // Z (синяя): yaw машины (поворот на колесах) ✅
+      ] as [number, number, number]
+      
+      // Логирование для отладки
+      const count = (window as any).__vehicleRotationAppliedCount || 0
+      if (count < 3) {
+        console.log('[YftViewer] 🎯 Model rotation applied (FIXED AXES):',
+          `GTA(pitch=${vehicleRotation.x.toFixed(1)}, roll=${vehicleRotation.y.toFixed(1)}, yaw=${vehicleRotation.z.toFixed(1)})`,
+          `→ Three.js(X=${(finalRotation[0] * 180 / Math.PI).toFixed(1)}, Y=${(finalRotation[1] * 180 / Math.PI).toFixed(1)}, Z=${(finalRotation[2] * 180 / Math.PI).toFixed(1)})`
+        )
+        ;(window as any).__vehicleRotationAppliedCount = count + 1
+      }
+      
+      return finalRotation
     } else if (gameViewMode) {
       // Game View без данных вращения - калибровочный поворот
       const baseRot = calibration?.modelRotation || 
@@ -238,19 +256,21 @@ function CameraSync({
   const baseFov = calibration.baseFov
   
   useEffect(() => {
-    // Сохраняем ссылку на камеру и устанавливаем начальный FOV
+    // Сохраняем ссылку на камеру
     if (camera instanceof THREE.PerspectiveCamera) {
       cameraRef.current = camera
-      
-      // Устанавливаем начальный FOV при включении Game View
-      if (enabled) {
-        const initialFov = baseFov * calibration.fovMultiplier
-        camera.fov = initialFov
-        camera.updateProjectionMatrix()
-        console.log('[CameraSync] 🎬 Initial FOV setup:', initialFov.toFixed(1))
-      }
     }
-  }, [camera, cameraRef, enabled, baseFov, calibration.fovMultiplier])
+  }, [camera, cameraRef])
+  
+  // Применяем FOV при изменении калибровки
+  useEffect(() => {
+    if (enabled && cameraRef.current) {
+      const finalFov = baseFov * calibration.fovMultiplier
+      cameraRef.current.fov = finalFov
+      cameraRef.current.updateProjectionMatrix()
+      console.log('[CameraSync] 🔍 FOV updated:', finalFov.toFixed(1))
+    }
+  }, [enabled, baseFov, calibration.fovMultiplier])
   
   useEffect(() => {
     if (!enabled) {
@@ -271,7 +291,6 @@ function CameraSync({
         console.log('[CameraSync] 📥 Received sync data:', {
           camPos: syncData?.camera?.position,
           camRot: syncData?.camera?.rotation,
-          fov: syncData?.camera?.fov,
           vehRot: syncData?.vehicle?.rotation,
           debug: syncData?.debug
         })
@@ -298,11 +317,10 @@ function CameraSync({
         // Трансформируем данные из GTA V в Three.js координаты с инверсией
         const transformed = transformSyncDataForThreeJS(syncData, calibration.cameraInvert)
         
-        // Применяем сглаживание для плавности (БЕЗ FOV - он статичный)
+        // Применяем сглаживание для плавности (только position и rotation)
         smootherRef.current.update(
           transformed.position,
-          transformed.rotation,
-          baseFov // Используем статичный базовый FOV вместо игрового
+          transformed.rotation
         )
         
         const smoothed = smootherRef.current.getCurrent()
@@ -328,23 +346,7 @@ function CameraSync({
         // - Position: полная синхронизация из игры (камера движется в пространстве)
         // - Pitch/Yaw: автоматически через lookAt(0,0,0) (камера всегда смотрит на модель)
         // - Roll: опционально, для крена камеры (если нужно)
-        
-        // Применяем FOV с мультипликатором (СТАТИЧНЫЙ базовый FOV)
-        const finalFov = baseFov * calibration.fovMultiplier
-        cam.fov = finalFov
-        cam.updateProjectionMatrix()
-        
-        // Логирование FOV для отладки (ВСЕГДА для первых 10 кадров, потом каждые 60)
-        if (logCounterRef.current < 10 || logCounterRef.current % 60 === 0) {
-          console.log('[CameraSync] 🔍 FOV Debug:', {
-            frame: logCounterRef.current,
-            baseFov: baseFov.toFixed(1),
-            multiplier: calibration.fovMultiplier.toFixed(2),
-            finalFov: finalFov.toFixed(1),
-            currentCamFov: cam.fov.toFixed(1),
-            isEqual: Math.abs(cam.fov - finalFov) < 0.01
-          })
-        }
+        // - FOV: НЕ обновляется здесь, только через useEffect при изменении калибровки
         
         // ЛОГИРОВАНИЕ только раз в секунду для диагностики (не забиваем консоль)
         if (logCounterRef.current < 3) {
@@ -414,9 +416,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
   
   // Debug информация для Game View
   const [debugInfo, setDebugInfo] = useState({
-    fps: 0,
-    cameraOffset: 0,
-    fov: 60
+    cameraOffset: 0
   })
   
   // Вращение автомобиля для синхронизации модели
@@ -440,40 +440,37 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
     loadMeshData()
   }, [vehicleName])
   
-  // Подписка на FPS данные от Alt:V для debug UI
+  // Подписка на данные синхронизации камеры от Alt:V
   useEffect(() => {
     if (!gameViewMode) return
     
-    const handleSyncFps = (data: { fps: number }) => {
-      setDebugInfo(prev => ({ ...prev, fps: data.fps }))
-    }
-    
     const handleCameraSync = (syncData: any) => {
-      // Вычисляем offset камеры от машины
+      // Вычисляем offset камеры от машины для debug UI
       const pos = syncData?.camera?.position
       if (pos) {
         const offset = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z)
-        setDebugInfo(prev => ({ 
-          ...prev, 
-          cameraOffset: offset,
-          fov: syncData?.camera?.fov || prev.fov
-        }))
+        setDebugInfo({ cameraOffset: offset })
       }
       
-      // Сохраняем вращение автомобиля для модели
+      // Сохраняем вращение автомобиля для синхронизации наклонов модели
       if (syncData?.vehicle?.rotation) {
         setVehicleRotation(syncData.vehicle.rotation)
+        
+        // Логирование для отладки (первые 3 раза)
+        const count = (window as any).__vehicleRotationLogCount || 0
+        if (count < 3) {
+          console.log('[YftViewer] 🔄 Vehicle rotation received:', syncData.vehicle.rotation)
+          ;(window as any).__vehicleRotationLogCount = count + 1
+        }
       }
     }
     
     if ((window as any).alt) {
-      ;(window as any).alt.on('yft-viewer:camera-sync:fps', handleSyncFps)
       ;(window as any).alt.on('yft-viewer:camera-sync:update', handleCameraSync)
     }
     
     return () => {
       if ((window as any).alt) {
-        ;(window as any).alt.off('yft-viewer:camera-sync:fps', handleSyncFps)
         ;(window as any).alt.off('yft-viewer:camera-sync:update', handleCameraSync)
       }
     }
@@ -898,18 +895,8 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
                 </div>
                 <div className="text-xs text-white font-mono">
                   <div className="flex justify-between space-x-3">
-                    <span className="text-gray-400">FPS:</span>
-                    <span className={debugInfo.fps >= 50 ? 'text-green-400' : debugInfo.fps >= 30 ? 'text-yellow-400' : 'text-red-400'}>
-                      {debugInfo.fps}
-                    </span>
-                  </div>
-                  <div className="flex justify-between space-x-3">
                     <span className="text-gray-400">Offset:</span>
                     <span className="text-blue-400">{debugInfo.cameraOffset.toFixed(2)}m</span>
-                  </div>
-                  <div className="flex justify-between space-x-3">
-                    <span className="text-gray-400">FOV:</span>
-                    <span className="text-purple-400">{debugInfo.fov.toFixed(1)}°</span>
                   </div>
                 </div>
               </div>
