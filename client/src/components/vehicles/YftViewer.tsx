@@ -7,7 +7,7 @@ import React, { useState, useEffect, Suspense, useRef } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Grid as ThreeGrid } from '@react-three/drei'
 import * as THREE from 'three'
-import { X, RotateCcw, Eye, Box, Grid as GridIcon } from 'lucide-react'
+import { X, RotateCcw, Eye, Box, Grid as GridIcon, Database, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { 
   transformSyncDataForThreeJS, 
@@ -16,6 +16,8 @@ import {
   type Vec3,
   YFT_NORMAL_VIEW_ROTATION
 } from '@/utils/coordinateTransform'
+import { useYFTCache } from '@/hooks/useYFTCache'
+import { YFTCache } from '@/utils/yftCache'
 
 interface YftViewerProps {
   vehicleName: string
@@ -411,6 +413,9 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
     { v: 0, i: 0, phase: 'idle' }
   )
   
+  // Кэширование YFT моделей
+  const { cacheStatus, loadFromCache, saveToCache, clearCache, refreshStats, isCacheAvailable } = useYFTCache()
+  
   // Ref для доступа к Three.js камере из CameraSync компонента
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   
@@ -586,7 +591,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
   }, [gameViewMode])
   
   /**
-   * Загрузка mesh данных через ALT:V → C# CodeWalker
+   * Загрузка mesh данных через ALT:V → C# CodeWalker с кэшированием
    */
   const loadMeshData = async () => {
     try {
@@ -599,6 +604,44 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
       if (typeof window === 'undefined' || !('alt' in window)) {
         throw new Error('ALT:V недоступен. Viewer работает только в игре.')
       }
+
+      // Создаем хэш файла для сохранения в кэш (стабильный, основан на имени)
+      const fileHash = await YFTCache.createFileHash(vehicleName, 0)
+      console.log(`[YftViewer] 🔍 File hash for ${vehicleName}: ${fileHash}`)
+      
+      // Пытаемся загрузить из кэша (без проверки хэша для совместимости)
+      console.log(`[YftViewer] 🔍 Trying to load from cache: ${vehicleName}`)
+      const cachedData = await loadFromCache(vehicleName)
+      if (cachedData) {
+        console.log(`[YftViewer] ✅ Loaded from cache: ${vehicleName} (vertices: ${cachedData.metadata.vertexCount})`)
+        
+        // Конвертируем ArrayBuffer обратно в массивы
+        const verticesArray = new Float32Array(cachedData.meshData, 0, cachedData.metadata.vertexCount * 3)
+        const indicesArray = new Uint32Array(cachedData.meshData, verticesArray.byteLength)
+        
+        const data: MeshData = {
+          vertices: Array.from(verticesArray),
+          indices: Array.from(indicesArray),
+          bounds: {
+            min: { 
+              x: cachedData.metadata.boundingBox.min[0],
+              y: cachedData.metadata.boundingBox.min[1],
+              z: cachedData.metadata.boundingBox.min[2]
+            },
+            max: { 
+              x: cachedData.metadata.boundingBox.max[0],
+              y: cachedData.metadata.boundingBox.max[1],
+              z: cachedData.metadata.boundingBox.max[2]
+            }
+          }
+        }
+        
+        setMeshData(data)
+        toast.success(`Модель загружена из кэша: ${cachedData.metadata.vertexCount.toLocaleString()} вершин`)
+        return
+      }
+      
+      console.log(`[YftViewer] Cache miss, loading from server: ${vehicleName}`)
       
       // Запрашиваем mesh данные у C# модуля через ALT:V
       const data = await requestMeshDataFromServer(vehicleName)
@@ -614,6 +657,44 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
       
       setMeshData(data)
       toast.success(`Модель загружена: ${(data.vertices.length / 3).toLocaleString()} вершин`)
+      
+      // Сохраняем в кэш асинхронно
+      try {
+        // Создаем ArrayBuffer для mesh данных
+        const totalSize = data.vertices.length * 4 + data.indices.length * 4 // Float32 + Uint32
+        const meshDataBuffer = new ArrayBuffer(totalSize)
+        
+        // Копируем данные в ArrayBuffer
+        const verticesView = new Float32Array(meshDataBuffer, 0, data.vertices.length)
+        const indicesView = new Uint32Array(meshDataBuffer, verticesView.byteLength, data.indices.length)
+        verticesView.set(data.vertices)
+        indicesView.set(data.indices)
+        
+        // Сохраняем в кэш
+        await saveToCache({
+          fileHash,
+          fileName: vehicleName,
+          fileSize: totalSize,
+          meshData: meshDataBuffer,
+          metadata: {
+            vertexCount: data.vertices.length / 3,
+            faceCount: data.indices.length / 3,
+            hasNormals: false, // YFT файлы не содержат нормали
+            hasUVs: false, // YFT файлы не содержат UV координаты
+            boundingBox: data.bounds ? {
+              min: [data.bounds.min.x, data.bounds.min.y, data.bounds.min.z] as [number, number, number],
+              max: [data.bounds.max.x, data.bounds.max.y, data.bounds.max.z] as [number, number, number]
+            } : {
+              min: [0, 0, 0] as [number, number, number],
+              max: [0, 0, 0] as [number, number, number]
+            }
+          }
+        })
+        
+        console.log(`[YftViewer] ✅ Cached ${vehicleName} successfully`)
+      } catch (err) {
+        console.error('[YftViewer] Cache save failed:', err)
+      }
       
     } catch (err: any) {
       console.error('[YftViewer] Error loading mesh data:', err)
@@ -845,6 +926,36 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
               <GridIcon className="w-4 h-4" />
               <span>Grid</span>
             </button>
+            
+            {/* Cache Management */}
+            {isCacheAvailable && (
+              <>
+                <div className="w-px h-8 bg-base-700" />
+                
+                {/* Cache Stats */}
+                <button
+                  onClick={refreshStats}
+                  className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium bg-base-800 text-gray-400 hover:bg-base-700 transition-all"
+                  title={`Кэш: ${cacheStatus.stats ? `${cacheStatus.stats.totalItems} моделей, ${YFTCache.formatSize(cacheStatus.stats.totalSize)}` : 'Загрузка...'}`}
+                >
+                  <Database className="w-4 h-4" />
+                  <span>
+                    {cacheStatus.stats ? `${cacheStatus.stats.totalItems}` : '?'}
+                  </span>
+                </button>
+                
+                {/* Clear Cache */}
+                <button
+                  onClick={clearCache}
+                  disabled={cacheStatus.savingToCache}
+                  className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium bg-red-800 text-red-200 hover:bg-red-700 transition-all disabled:opacity-50"
+                  title="Очистить кэш моделей"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Clear</span>
+                </button>
+              </>
+            )}
             
             {/* Reset Camera */}
             <button
