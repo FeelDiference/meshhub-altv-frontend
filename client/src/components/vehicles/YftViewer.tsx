@@ -3,12 +3,19 @@
  * Отображает 3D модель автомобиля в wireframe режиме используя Three.js
  */
 
-import React, { useState, useEffect, Suspense } from 'react'
-import { Canvas } from '@react-three/fiber'
+import React, { useState, useEffect, Suspense, useRef } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Grid as ThreeGrid } from '@react-three/drei'
 import * as THREE from 'three'
 import { X, RotateCcw, Eye, Box, Grid as GridIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { 
+  transformSyncDataForThreeJS, 
+  CameraSyncSmoother,
+  type CameraSyncData,
+  type Vec3,
+  YFT_NORMAL_VIEW_ROTATION
+} from '@/utils/coordinateTransform'
 
 interface YftViewerProps {
   vehicleName: string
@@ -28,7 +35,24 @@ interface MeshData {
 /**
  * Компонент 3D модели с wireframe
  */
-function VehicleModel({ meshData, viewMode }: { meshData: MeshData; viewMode: 'wireframe' | 'solid' | 'real' }) {
+function VehicleModel({ 
+  meshData, 
+  viewMode, 
+  gameViewMode = false,
+  vehicleRotation,
+  showDebugAxes = false,
+  calibration
+}: { 
+  meshData: MeshData
+  viewMode: 'wireframe' | 'solid' | 'real'
+  gameViewMode?: boolean
+  vehicleRotation?: Vec3  // Вращение машины в Game View (в градусах)
+  showDebugAxes?: boolean  // Показывать ли debug оси координат
+  calibration?: {
+    modelRotation: { x: number; y: number; z: number }
+    modelOffset: { x: number; y: number; z: number }
+  }
+}) {
   
   // Создаем геометрию из mesh данных БЕЗ вычисления нормалей (для производительности!)
   const geometry = React.useMemo(() => {
@@ -57,10 +81,21 @@ function VehicleModel({ meshData, viewMode }: { meshData: MeshData; viewMode: 'w
   }, [meshData])
   
   // Вычисляем Bounding Box и позицию для правильного размещения на полу
-  const position = React.useMemo(() => {
-    if (!geometry) return [0, 0, 0] as const
+  // В Game View режиме модель СТРОГО в центре (0, 0, 0) без offset (или с калибровочным offset)!
+  const position: [number, number, number] = React.useMemo(() => {
+    if (!geometry) return [0, 0, 0]
     
-    // Вычисляем Bounding Box
+    // В Game View режиме - модель в центре + калибровочный offset
+    if (gameViewMode && calibration) {
+      const offset = calibration.modelOffset
+      return [offset.x, offset.y, offset.z]
+    }
+    
+    if (gameViewMode) {
+      return [0, 0, 0]
+    }
+    
+    // В обычном режиме - позиционируем на полу как раньше
     geometry.computeBoundingBox()
     const box = geometry.boundingBox!
     
@@ -91,11 +126,41 @@ function VehicleModel({ meshData, viewMode }: { meshData: MeshData; viewMode: 'w
     const yOffset = -rotatedMinY
     console.log(`[YftViewer] ⬇️ Positioning at Y offset: ${yOffset.toFixed(3)}`)
     
-    return [0, yOffset, 0] as const
-  }, [geometry])
+    return [0, yOffset, 0]
+  }, [geometry, gameViewMode, calibration])
+  
+  // Определяем вращение модели - РАЗНЫЕ для Normal и Game View!
+  const rotation: [number, number, number] = React.useMemo(() => {
+    const DEG_TO_RAD = Math.PI / 180
+    
+    if (gameViewMode && vehicleRotation) {
+      // В Game View: калибровочный поворот (если есть) или базовый + вращение автомобиля из игры
+      const baseRot = calibration?.modelRotation || 
+        { x: 90, y: 180, z: 180 } // Дефолт из YFT_GAME_VIEW_ROTATION
+      
+      return [
+        baseRot.x * DEG_TO_RAD + vehicleRotation.x * DEG_TO_RAD,
+        baseRot.y * DEG_TO_RAD + vehicleRotation.y * DEG_TO_RAD,
+        baseRot.z * DEG_TO_RAD + vehicleRotation.z * DEG_TO_RAD
+      ]
+    } else if (gameViewMode) {
+      // Game View без данных вращения - калибровочный поворот
+      const baseRot = calibration?.modelRotation || 
+        { x: 90, y: 180, z: 180 }
+      
+      return [
+        baseRot.x * DEG_TO_RAD,
+        baseRot.y * DEG_TO_RAD,
+        baseRot.z * DEG_TO_RAD
+      ]
+    } else {
+      // Normal View: стандартный поворот для красивого отображения (на колесах)
+      return YFT_NORMAL_VIEW_ROTATION
+    }
+  }, [gameViewMode, vehicleRotation, calibration])
   
   return (
-    <group rotation={[Math.PI / 2, Math.PI, 0]} position={position}>
+    <group rotation={rotation} position={position}>
       {/* Wireframe режим */}
       {viewMode === 'wireframe' && (
         <mesh geometry={geometry}>
@@ -137,8 +202,197 @@ function VehicleModel({ meshData, viewMode }: { meshData: MeshData; viewMode: 'w
           </mesh>
         </>
       )}
+      
+      {/* Debug оси координат для калибровки */}
+      {showDebugAxes && (
+        <axesHelper args={[5]} />
+      )}
     </group>
   )
+}
+
+/**
+ * Компонент синхронизации камеры - применяет sync данные к Three.js камере
+ */
+function CameraSync({ 
+  enabled, 
+  cameraRef,
+  calibration
+}: { 
+  enabled: boolean
+  cameraRef: React.MutableRefObject<THREE.PerspectiveCamera | null>
+  calibration: {
+    cameraInvert: { x: boolean; y: boolean; z: boolean }
+    baseFov: number
+    fovMultiplier: number
+    applyRoll: boolean
+  }
+}) {
+  const { camera } = useThree()
+  const smootherRef = useRef(new CameraSyncSmoother())
+  const rafRef = useRef<number | null>(null)
+  const lastSyncDataRef = useRef<any>(null)
+  const logCounterRef = useRef(0) // Для ограничения логирования
+  
+  // Базовый FOV из калибровки (не синхронизируется из игры)
+  const baseFov = calibration.baseFov
+  
+  useEffect(() => {
+    // Сохраняем ссылку на камеру и устанавливаем начальный FOV
+    if (camera instanceof THREE.PerspectiveCamera) {
+      cameraRef.current = camera
+      
+      // Устанавливаем начальный FOV при включении Game View
+      if (enabled) {
+        const initialFov = baseFov * calibration.fovMultiplier
+        camera.fov = initialFov
+        camera.updateProjectionMatrix()
+        console.log('[CameraSync] 🎬 Initial FOV setup:', initialFov.toFixed(1))
+      }
+    }
+  }, [camera, cameraRef, enabled, baseFov, calibration.fovMultiplier])
+  
+  useEffect(() => {
+    if (!enabled) {
+      // Если синхронизация отключена, останавливаем RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      return
+    }
+    
+    // Обработчик данных синхронизации от Alt:V
+    const handleCameraSync = (syncData: CameraSyncData) => {
+      lastSyncDataRef.current = syncData
+      
+      // ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ для диагностики (только первые 3 сообщения)
+      if (logCounterRef.current < 3) {
+        console.log('[CameraSync] 📥 Received sync data:', {
+          camPos: syncData?.camera?.position,
+          camRot: syncData?.camera?.rotation,
+          fov: syncData?.camera?.fov,
+          vehRot: syncData?.vehicle?.rotation,
+          debug: syncData?.debug
+        })
+        logCounterRef.current++
+      }
+    }
+    
+    // Подписываемся на событие синхронизации
+    if ((window as any).alt) {
+      ;(window as any).alt.on('yft-viewer:camera-sync:update', handleCameraSync)
+      console.log('[CameraSync] ✅ Subscribed to yft-viewer:camera-sync:update event')
+    }
+    
+    // RAF цикл для плавного применения данных
+    const animate = () => {
+      if (!enabled || !cameraRef.current || !lastSyncDataRef.current) {
+        rafRef.current = requestAnimationFrame(animate)
+        return
+      }
+      
+      try {
+        const syncData = lastSyncDataRef.current
+        
+        // Трансформируем данные из GTA V в Three.js координаты с инверсией
+        const transformed = transformSyncDataForThreeJS(syncData, calibration.cameraInvert)
+        
+        // Применяем сглаживание для плавности (БЕЗ FOV - он статичный)
+        smootherRef.current.update(
+          transformed.position,
+          transformed.rotation,
+          baseFov // Используем статичный базовый FOV вместо игрового
+        )
+        
+        const smoothed = smootherRef.current.getCurrent()
+        
+        // Применяем к камере
+        const cam = cameraRef.current
+        
+        // 1. Позиционируем камеру в пространстве
+        cam.position.set(smoothed.position.x, smoothed.position.y, smoothed.position.z)
+        
+        // 2. ВАЖНО: Камера ВСЕГДА смотрит на центр модели (0, 0, 0)
+        // Это обеспечивает правильное вращение вокруг модели
+        // lookAt автоматически вычисляет pitch и yaw
+        cam.lookAt(0, 0, 0)
+        
+        // 3. ОПЦИОНАЛЬНО: Применяем ROLL (крен камеры по оси Z)
+        // Pitch и Yaw уже заданы через lookAt, а roll нужно применить вручную
+        if (calibration.applyRoll) {
+          cam.rotation.z = smoothed.rotation.z
+        }
+        
+        // ГИБРИДНЫЙ ПОДХОД:
+        // - Position: полная синхронизация из игры (камера движется в пространстве)
+        // - Pitch/Yaw: автоматически через lookAt(0,0,0) (камера всегда смотрит на модель)
+        // - Roll: опционально, для крена камеры (если нужно)
+        
+        // Применяем FOV с мультипликатором (СТАТИЧНЫЙ базовый FOV)
+        const finalFov = baseFov * calibration.fovMultiplier
+        cam.fov = finalFov
+        cam.updateProjectionMatrix()
+        
+        // Логирование FOV для отладки (ВСЕГДА для первых 10 кадров, потом каждые 60)
+        if (logCounterRef.current < 10 || logCounterRef.current % 60 === 0) {
+          console.log('[CameraSync] 🔍 FOV Debug:', {
+            frame: logCounterRef.current,
+            baseFov: baseFov.toFixed(1),
+            multiplier: calibration.fovMultiplier.toFixed(2),
+            finalFov: finalFov.toFixed(1),
+            currentCamFov: cam.fov.toFixed(1),
+            isEqual: Math.abs(cam.fov - finalFov) < 0.01
+          })
+        }
+        
+        // ЛОГИРОВАНИЕ только раз в секунду для диагностики (не забиваем консоль)
+        if (logCounterRef.current < 3) {
+          console.log('[CameraSync] 📸 Applied to camera:', {
+            rawData: {
+              pos: [syncData.camera.position.x.toFixed(2), syncData.camera.position.y.toFixed(2), syncData.camera.position.z.toFixed(2)],
+              rot: [syncData.camera.rotation.x.toFixed(1), syncData.camera.rotation.y.toFixed(1), syncData.camera.rotation.z.toFixed(1)]
+            },
+            transformed: {
+              pos: [smoothed.position.x.toFixed(2), smoothed.position.y.toFixed(2), smoothed.position.z.toFixed(2)],
+              rot: [smoothed.rotation.x.toFixed(2), smoothed.rotation.y.toFixed(2), smoothed.rotation.z.toFixed(2)]
+            },
+            camera: {
+              position: [cam.position.x.toFixed(2), cam.position.y.toFixed(2), cam.position.z.toFixed(2)],
+              fov: cam.fov.toFixed(1)
+            },
+            calibration: {
+              invert: calibration.cameraInvert,
+              fovMult: calibration.fovMultiplier
+            }
+          })
+        }
+        
+      } catch (err) {
+        console.error('[YftViewer] Error applying camera sync:', err)
+      }
+      
+      rafRef.current = requestAnimationFrame(animate)
+    }
+    
+    // Запускаем RAF
+    rafRef.current = requestAnimationFrame(animate)
+    
+    // Cleanup
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      
+      if ((window as any).alt) {
+        ;(window as any).alt.off('yft-viewer:camera-sync:update', handleCameraSync)
+        console.log('[CameraSync] ✅ Unsubscribed from yft-viewer:camera-sync:update event')
+      }
+    }
+  }, [enabled, cameraRef])
+  
+  return null // Этот компонент не рендерит ничего, только управляет камерой
 }
 
 /**
@@ -155,10 +409,75 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
     { v: 0, i: 0, phase: 'idle' }
   )
   
+  // Ref для доступа к Three.js камере из CameraSync компонента
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  
+  // Debug информация для Game View
+  const [debugInfo, setDebugInfo] = useState({
+    fps: 0,
+    cameraOffset: 0,
+    fov: 60
+  })
+  
+  // Вращение автомобиля для синхронизации модели
+  const [vehicleRotation, setVehicleRotation] = useState<{ x: number; y: number; z: number } | null>(null)
+  
+  // Debug оси координат для калибровки
+  const [showDebugAxes, setShowDebugAxes] = useState(false)
+  
+  // Калибровочные параметры (live настройка)
+  const [calibration, setCalibration] = useState({
+    modelRotation: { x: 90, y: 180, z: 180 }, // В градусах
+    cameraInvert: { x: false, y: false, z: false },
+    modelOffset: { x: 0, y: -0.8, z: 0 }, // Y = -0.8 для точного позиционирования
+    baseFov: 50, // Базовый FOV (не из игры, статичный)
+    fovMultiplier: 1.0,
+    applyRoll: false // Применять roll (крен) камеры
+  })
+  
   // Загрузка mesh данных при монтировании
   useEffect(() => {
     loadMeshData()
   }, [vehicleName])
+  
+  // Подписка на FPS данные от Alt:V для debug UI
+  useEffect(() => {
+    if (!gameViewMode) return
+    
+    const handleSyncFps = (data: { fps: number }) => {
+      setDebugInfo(prev => ({ ...prev, fps: data.fps }))
+    }
+    
+    const handleCameraSync = (syncData: any) => {
+      // Вычисляем offset камеры от машины
+      const pos = syncData?.camera?.position
+      if (pos) {
+        const offset = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z)
+        setDebugInfo(prev => ({ 
+          ...prev, 
+          cameraOffset: offset,
+          fov: syncData?.camera?.fov || prev.fov
+        }))
+      }
+      
+      // Сохраняем вращение автомобиля для модели
+      if (syncData?.vehicle?.rotation) {
+        setVehicleRotation(syncData.vehicle.rotation)
+      }
+    }
+    
+    if ((window as any).alt) {
+      ;(window as any).alt.on('yft-viewer:camera-sync:fps', handleSyncFps)
+      ;(window as any).alt.on('yft-viewer:camera-sync:update', handleCameraSync)
+    }
+    
+    return () => {
+      if ((window as any).alt) {
+        ;(window as any).alt.off('yft-viewer:camera-sync:fps', handleSyncFps)
+        ;(window as any).alt.off('yft-viewer:camera-sync:update', handleCameraSync)
+      }
+    }
+  }, [gameViewMode])
   
   // Обработка ESC для выхода из Game View
   useEffect(() => {
@@ -180,7 +499,21 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
     }
   }, [gameViewMode, onGameViewChange])
   
-  // Управляем скрытием UI в Game View режиме
+  // Принудительное обновление камеры при изменении калибровки
+  useEffect(() => {
+    if (gameViewMode && cameraRef.current) {
+      // Логируем изменение калибровки - обновление произойдет в RAF цикле CameraSync
+      console.log('[YftViewer] 🔧 Calibration changed:', {
+        fovMultiplier: calibration.fovMultiplier,
+        modelRotation: calibration.modelRotation,
+        modelOffset: calibration.modelOffset,
+        cameraInvert: calibration.cameraInvert,
+        applyRoll: calibration.applyRoll
+      })
+    }
+  }, [calibration, gameViewMode])
+
+  // Управляем скрытием UI и камерой в Game View режиме
   useEffect(() => {
     if (gameViewMode) {
       // В Game View режиме - скрываем основной UI
@@ -197,10 +530,20 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
       if ((window as any).alt) {
         ;(window as any).alt.emit('yft-viewer:focus-mode', { mode: focusMode })
         console.log(`[YftViewer] ✅ Sent yft-viewer:focus-mode ${focusMode} to Alt:V Client`)
+        
+        // ЗАПУСКАЕМ СИНХРОНИЗАЦИЮ КАМЕРЫ
+        ;(window as any).alt.emit('yft-viewer:camera:sync:start')
+        console.log(`[YftViewer] 🎥 Started camera synchronization`)
       }
     } else {
       // В обычном режиме YftViewer - НЕ скрываем основной UI
       console.log(`[YftViewer] Game View OFF - not changing focusMode`)
+      
+      // ОСТАНАВЛИВАЕМ СИНХРОНИЗАЦИЮ КАМЕРЫ
+      if ((window as any).alt) {
+        ;(window as any).alt.emit('yft-viewer:camera:sync:stop')
+        console.log(`[YftViewer] 🛑 Stopped camera synchronization`)
+      }
     }
     
     const handleRightClick = (e: MouseEvent) => {
@@ -536,7 +879,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
           } : undefined}
         >
           
-          {/* Экстренная кнопка выхода из Game View */}
+          {/* Экстренная кнопка выхода из Game View + Debug Info */}
           {gameViewMode && (
             <div className="absolute top-4 right-4 z-50 flex flex-col items-end space-y-2">
               <button
@@ -547,6 +890,154 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
                 <X className="w-4 h-4" />
                 <span className="font-medium">Выход (ESC)</span>
               </button>
+              
+              {/* Debug Info Panel */}
+              <div className="bg-black/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-green-500/30 space-y-1">
+                <div className="text-xs font-bold text-green-400 mb-1">
+                  🎥 Camera Sync Debug
+                </div>
+                <div className="text-xs text-white font-mono">
+                  <div className="flex justify-between space-x-3">
+                    <span className="text-gray-400">FPS:</span>
+                    <span className={debugInfo.fps >= 50 ? 'text-green-400' : debugInfo.fps >= 30 ? 'text-yellow-400' : 'text-red-400'}>
+                      {debugInfo.fps}
+                    </span>
+                  </div>
+                  <div className="flex justify-between space-x-3">
+                    <span className="text-gray-400">Offset:</span>
+                    <span className="text-blue-400">{debugInfo.cameraOffset.toFixed(2)}m</span>
+                  </div>
+                  <div className="flex justify-between space-x-3">
+                    <span className="text-gray-400">FOV:</span>
+                    <span className="text-purple-400">{debugInfo.fov.toFixed(1)}°</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Debug Axes Toggle */}
+              <div className="text-xs text-white bg-black/70 px-3 py-2 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox"
+                    checked={showDebugAxes}
+                    onChange={(e) => setShowDebugAxes(e.target.checked)}
+                    className="w-3 h-3 rounded"
+                  />
+                  <span>Debug Axes</span>
+                </label>
+              </div>
+              
+              {/* Calibration Panel */}
+              <div className="text-xs text-white bg-black/90 p-3 rounded-lg border border-purple-500/50 max-w-xs overflow-y-auto max-h-[60vh]">
+                <div className="font-bold text-purple-400 mb-2">🎛️ Live Calibration</div>
+                
+                {/* Model Rotation */}
+                <div className="space-y-1 mb-3">
+                  <div className="text-gray-300 font-semibold">Model Rotation (degrees):</div>
+                  {(['x', 'y', 'z'] as const).map((axis) => (
+                    <div key={axis} className="flex items-center gap-2">
+                      <span className={`w-12 ${axis === 'x' ? 'text-red-400' : axis === 'y' ? 'text-green-400' : 'text-blue-400'}`}>
+                        {axis.toUpperCase()}:
+                      </span>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelRotation: { ...prev.modelRotation, [axis]: prev.modelRotation[axis] - 15 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-15</button>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelRotation: { ...prev.modelRotation, [axis]: prev.modelRotation[axis] - 5 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-5</button>
+                      <span className="w-12 text-center text-yellow-300">{calibration.modelRotation[axis]}°</span>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelRotation: { ...prev.modelRotation, [axis]: prev.modelRotation[axis] + 5 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+5</button>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelRotation: { ...prev.modelRotation, [axis]: prev.modelRotation[axis] + 15 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+15</button>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Model Offset */}
+                <div className="space-y-1 mb-3">
+                  <div className="text-gray-300 font-semibold">Model Offset (meters):</div>
+                  {(['x', 'y', 'z'] as const).map((axis) => (
+                    <div key={axis} className="flex items-center gap-2">
+                      <span className={`w-12 ${axis === 'x' ? 'text-red-400' : axis === 'y' ? 'text-green-400' : 'text-blue-400'}`}>
+                        {axis.toUpperCase()}:
+                      </span>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelOffset: { ...prev.modelOffset, [axis]: prev.modelOffset[axis] - 0.5 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-0.5</button>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelOffset: { ...prev.modelOffset, [axis]: prev.modelOffset[axis] - 0.1 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-0.1</button>
+                      <span className="w-12 text-center text-yellow-300">{calibration.modelOffset[axis].toFixed(1)}</span>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelOffset: { ...prev.modelOffset, [axis]: prev.modelOffset[axis] + 0.1 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+0.1</button>
+                      <button onClick={() => setCalibration(prev => ({ ...prev, modelOffset: { ...prev.modelOffset, [axis]: prev.modelOffset[axis] + 0.5 } }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+0.5</button>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Camera Invert */}
+                <div className="space-y-1 mb-3">
+                  <div className="text-gray-300 font-semibold">Camera Invert:</div>
+                  {(['x', 'y', 'z'] as const).map((axis) => (
+                    <div key={axis} className="flex items-center gap-2">
+                      <span className={`w-12 ${axis === 'x' ? 'text-red-400' : axis === 'y' ? 'text-green-400' : 'text-blue-400'}`}>
+                        {axis.toUpperCase()}:
+                      </span>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox"
+                          checked={calibration.cameraInvert[axis]}
+                          onChange={(e) => setCalibration(prev => ({ ...prev, cameraInvert: { ...prev.cameraInvert, [axis]: e.target.checked } }))}
+                          className="w-3 h-3 rounded"
+                        />
+                        <span>{calibration.cameraInvert[axis] ? 'Inverted' : 'Normal'}</span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Apply Roll */}
+                <div className="space-y-1 mb-3">
+                  <div className="text-gray-300 font-semibold">Camera Roll:</div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      checked={calibration.applyRoll}
+                      onChange={(e) => setCalibration(prev => ({ ...prev, applyRoll: e.target.checked }))}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span>{calibration.applyRoll ? 'Applied' : 'Disabled'} (крен камеры)</span>
+                  </label>
+                </div>
+                
+                {/* Base FOV */}
+                <div className="space-y-1 mb-3">
+                  <div className="text-gray-300 font-semibold">Base FOV (static):</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setCalibration(prev => ({ ...prev, baseFov: prev.baseFov - 10 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-10</button>
+                    <button onClick={() => setCalibration(prev => ({ ...prev, baseFov: prev.baseFov - 5 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-5</button>
+                    <span className="w-16 text-center text-cyan-300">{calibration.baseFov.toFixed(0)}°</span>
+                    <button onClick={() => setCalibration(prev => ({ ...prev, baseFov: prev.baseFov + 5 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+5</button>
+                    <button onClick={() => setCalibration(prev => ({ ...prev, baseFov: prev.baseFov + 10 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+10</button>
+                  </div>
+                </div>
+                
+                {/* FOV Multiplier */}
+                <div className="space-y-1 mb-3">
+                  <div className="text-gray-300 font-semibold">FOV Multiplier:</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setCalibration(prev => ({ ...prev, fovMultiplier: prev.fovMultiplier - 0.1 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-0.1</button>
+                    <button onClick={() => setCalibration(prev => ({ ...prev, fovMultiplier: prev.fovMultiplier - 0.05 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">-0.05</button>
+                    <span className="w-16 text-center text-yellow-300">{calibration.fovMultiplier.toFixed(2)}x</span>
+                    <button onClick={() => setCalibration(prev => ({ ...prev, fovMultiplier: prev.fovMultiplier + 0.05 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+0.05</button>
+                    <button onClick={() => setCalibration(prev => ({ ...prev, fovMultiplier: prev.fovMultiplier + 0.1 }))} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">+0.1</button>
+                  </div>
+                  <div className="text-xs text-gray-400 text-center">Final: {(calibration.baseFov * calibration.fovMultiplier).toFixed(1)}°</div>
+                </div>
+                
+                {/* Copy Config Button */}
+                <button
+                  onClick={() => {
+                    const config = JSON.stringify(calibration, null, 2)
+                    navigator.clipboard.writeText(config)
+                    toast.success('Config copied to clipboard!')
+                  }}
+                  className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold"
+                >
+                  📋 Copy Config
+                </button>
+              </div>
+              
               <div className="text-xs text-white bg-black/70 px-3 py-2 rounded-lg">
                 Game View Mode Active
               </div>
@@ -609,6 +1100,18 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
                 {/* Камера */}
                 <PerspectiveCamera makeDefault position={[5, 3, 5]} />
                 
+                {/* Синхронизация камеры в Game View режиме */}
+                <CameraSync 
+                  enabled={gameViewMode} 
+                  cameraRef={cameraRef}
+                  calibration={{
+                    cameraInvert: calibration.cameraInvert,
+                    baseFov: calibration.baseFov,
+                    fovMultiplier: calibration.fovMultiplier,
+                    applyRoll: calibration.applyRoll
+                  }}
+                />
+                
                 {/* Освещение */}
                 <ambientLight intensity={0.5} />
                 <directionalLight position={[10, 10, 5]} intensity={1} />
@@ -626,14 +1129,19 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
                   />
                 )}
                 
-                {/* 3D Модель */}
+                {/* 3D Модель - передаем gameViewMode и vehicleRotation для синхронизации */}
                 <VehicleModel 
                   meshData={meshData} 
                   viewMode={viewMode}
+                  gameViewMode={gameViewMode}
+                  vehicleRotation={vehicleRotation || undefined}
+                  showDebugAxes={showDebugAxes}
+                  calibration={gameViewMode ? calibration : undefined}
                 />
                 
-                {/* Контроллы камеры */}
+                {/* Контроллы камеры - ОТКЛЮЧЕНЫ в Game View режиме */}
                 <OrbitControls 
+                  enabled={!gameViewMode}
                   enableDamping
                   dampingFactor={0.05}
                   rotateSpeed={0.5}
