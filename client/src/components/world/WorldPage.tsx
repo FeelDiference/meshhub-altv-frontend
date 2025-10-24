@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Cloud, Sun, Wind, Droplets, Star, Clock } from 'lucide-react'
+import TeleportMarkers from './TeleportMarkers'
 
 const WorldPage = () => {
   const [currentWeather, setCurrentWeather] = useState('CLEAR')
@@ -9,7 +10,8 @@ const WorldPage = () => {
     weather: string[]
     time: string[]
     timeSpeed: number[]
-  }>({ weather: [], time: [], timeSpeed: [] })
+    teleportMarkers: string[] // Favorites для маркеров телепортации
+  }>({ weather: [], time: [], timeSpeed: [], teleportMarkers: [] })
 
   const weatherTypes = [
     { id: 'CLEAR', name: 'Ясно', icon: Sun, color: 'text-yellow-400' },
@@ -57,15 +59,36 @@ const WorldPage = () => {
           // Проверяем, есть ли данные на сервере
           const hasServerData = data.favorites.weather?.length > 0 || 
                                 data.favorites.time?.length > 0 || 
-                                data.favorites.timeSpeed?.length > 0
+                                data.favorites.timeSpeed?.length > 0 ||
+                                data.favorites.teleportMarkers?.length > 0
           
           if (hasServerData) {
             console.log(`[WorldPage] Using server favorites:`, data.favorites)
-            setFavorites(data.favorites)
+            setFavorites({
+              weather: data.favorites.weather || [],
+              time: data.favorites.time || [],
+              timeSpeed: data.favorites.timeSpeed || [],
+              teleportMarkers: data.favorites.teleportMarkers || []
+            })
             // Синхронизируем с localStorage
             localStorage.setItem('meshhub_world_favorites', JSON.stringify(data.favorites))
           } else {
-            console.log(`[WorldPage] Server has no favorites, keeping localStorage data`)
+            console.log(`[WorldPage] Server has no favorites, loading from localStorage`)
+            // Загружаем из localStorage
+            try {
+              const stored = localStorage.getItem('meshhub_world_favorites')
+              if (stored) {
+                const parsed = JSON.parse(stored)
+                setFavorites({
+                  weather: parsed.weather || [],
+                  time: parsed.time || [],
+                  timeSpeed: parsed.timeSpeed || [],
+                  teleportMarkers: parsed.teleportMarkers || []
+                })
+              }
+            } catch (e) {
+              console.error(`[WorldPage] Error loading from localStorage:`, e)
+            }
           }
         }
       }
@@ -186,6 +209,42 @@ const WorldPage = () => {
     })
   }
 
+  const toggleMarkerFavorite = (markerId: string) => {
+    console.log(`[WorldPage] Toggling marker favorite: ${markerId}`)
+    
+    setFavorites(prevFavorites => {
+      const currentFavs = prevFavorites.teleportMarkers || []
+      const newFavorites = {
+        ...prevFavorites,
+        teleportMarkers: currentFavs.includes(markerId)
+          ? currentFavs.filter(id => id !== markerId)
+          : [...currentFavs, markerId]
+      }
+      
+      console.log(`[WorldPage] New favorites:`, newFavorites)
+      
+      // Сохраняем в localStorage
+      try {
+        localStorage.setItem('meshhub_world_favorites', JSON.stringify(newFavorites))
+        console.log(`[WorldPage] Favorites saved to localStorage`)
+      } catch (error) {
+        console.error(`[WorldPage] Error saving favorites:`, error)
+      }
+      
+      // Отправляем на сервер через единый механизм (как погода и время)
+      if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+        try {
+          ;(window as any).alt.emit('world:favorites:save', { favorites: newFavorites })
+          console.log(`[WorldPage] Favorites sent to server (including teleportMarkers)`)
+        } catch (error) {
+          console.error(`[WorldPage] Error saving to server:`, error)
+        }
+      }
+      
+      return newFavorites
+    })
+  }
+
   const isFavorite = (type: 'weather' | 'time' | 'timeSpeed', value: string | number) => {
     if (type === 'weather' || type === 'time') {
       return (favorites[type] as string[])?.includes(value as string) || false
@@ -193,6 +252,10 @@ const WorldPage = () => {
       return (favorites[type] as number[])?.includes(value as number) || false
     }
     return false
+  }
+
+  const isMarkerFavorite = (markerId: string) => {
+    return favorites.teleportMarkers?.includes(markerId) || false
   }
 
   return (
@@ -205,6 +268,12 @@ const WorldPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Координаты и телепортация - первый блок */}
+      <TeleportMarkers 
+        onToggleFavorite={toggleMarkerFavorite}
+        isFavorite={isMarkerFavorite}
+      />
 
       {/* Погода */}
       <div className="bg-base-800/50 rounded-lg p-4 border border-base-700 mb-4">

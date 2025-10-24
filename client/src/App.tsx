@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users, Clock, Pencil, Check, ChevronDown, ChevronRight, Loader, Star } from 'lucide-react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Loader2, AlertCircle, Download, Play, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, Heart, Globe, Users, Clock, Pencil, Check, ChevronDown, ChevronRight, Loader, Star, Navigation } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import { LoginPage } from '@/pages/LoginPage'
 import TuningSliders from '@/components/vehicles/TuningSliders'
@@ -45,13 +45,21 @@ type AnyWeapon = WeaponResource | (GTAVWeapon & {
 })
 
 const Dashboard = () => {
-  const [favorites, setFavorites] = useState<{ weather: string[], time: string[], timeSpeed: number[] }>({
+  const [favorites, setFavorites] = useState<{ 
+    weather: string[]
+    time: string[]
+    timeSpeed: number[]
+    teleportMarkers: string[] // ID избранных маркеров
+  }>({
     weather: [],
     time: [],
-    timeSpeed: []
+    timeSpeed: [],
+    teleportMarkers: []
   })
   
   const [favoriteLocations, setFavoriteLocations] = useState<Array<{id: string, name: string, coords: {x: number, y: number, z: number}}>>([])
+  const [favoriteTeleportMarkers, setFavoriteTeleportMarkers] = useState<Array<{id: string, name: string, position: {x: number, y: number, z: number}, createdAt: string}>>([])
+  const [allTeleportMarkers, setAllTeleportMarkers] = useState<Array<{id: string, name: string, position: {x: number, y: number, z: number}, createdAt: string}>>([])
   const [favoriteVehicles, setFavoriteVehicles] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null)
@@ -61,6 +69,7 @@ const Dashboard = () => {
   console.log('[Dashboard] Current state:', {
     favorites,
     favoriteLocations: favoriteLocations.length,
+    favoriteTeleportMarkers: favoriteTeleportMarkers.length,
     favoriteVehicles: favoriteVehicles.length,
     isLoading
   })
@@ -104,6 +113,16 @@ const Dashboard = () => {
         console.log('[Dashboard] Requesting favorite vehicles from Alt:V storage')
       } catch (error) {
         console.error('[Dashboard] Error requesting favorite vehicles:', error)
+      }
+    }
+    
+    // Загружаем все маркеры телепортации
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('world:markers:load')
+        console.log('[Dashboard] Requesting teleport markers from server')
+      } catch (error) {
+        console.error('[Dashboard] Error requesting teleport markers:', error)
       }
     }
 
@@ -169,8 +188,40 @@ const Dashboard = () => {
       }
     }
   }, [])
+  
+  // Обработчик получения маркеров телепортации
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handleMarkersLoaded = (data: any) => {
+        console.log('[Dashboard] Received teleport markers:', data)
+        if (data.markers && Array.isArray(data.markers)) {
+          setAllTeleportMarkers(data.markers)
+          console.log('[Dashboard] Loaded all teleport markers:', data.markers.length)
+        }
+      }
 
-  const hasFavorites = (favorites.weather?.length > 0) || (favorites.time?.length > 0) || (favorites.timeSpeed?.length > 0) || (favoriteLocations?.length > 0) || (favoriteVehicles?.length > 0)
+      ;(window as any).alt.on('world:markers:loaded', handleMarkersLoaded)
+      
+      return () => {
+        ;(window as any).alt.off?.('world:markers:loaded', handleMarkersLoaded)
+      }
+    }
+  }, [])
+  
+  // Фильтруем избранные маркеры телепортации
+  useEffect(() => {
+    if (allTeleportMarkers.length > 0 && favorites.teleportMarkers && favorites.teleportMarkers.length > 0) {
+      const filtered = allTeleportMarkers.filter(marker => 
+        favorites.teleportMarkers.includes(marker.id)
+      )
+      setFavoriteTeleportMarkers(filtered)
+      console.log(`[Dashboard] Filtered ${filtered.length} favorite teleport markers from ${allTeleportMarkers.length} total`)
+    } else {
+      setFavoriteTeleportMarkers([])
+    }
+  }, [allTeleportMarkers, favorites.teleportMarkers])
+
+  const hasFavorites = (favorites.weather?.length > 0) || (favorites.time?.length > 0) || (favorites.timeSpeed?.length > 0) || (favoriteLocations?.length > 0) || (favoriteVehicles?.length > 0) || (favoriteTeleportMarkers?.length > 0)
 
   // Функции для применения настроек
   const applyWeather = (weather: string) => {
@@ -277,6 +328,19 @@ const Dashboard = () => {
       } catch (error) {
         console.error(`[Dashboard] Error spawning vehicle:`, error)
         toast.error('Ошибка спавна машины')
+      }
+    }
+  }
+  
+  const teleportToMarker = (marker: {id: string, name: string, position: {x: number, y: number, z: number}}) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        (window as any).alt.emit('world:teleport', { position: marker.position })
+        toast.success(`Телепорт: ${marker.name}`)
+        console.log(`[Dashboard] Teleported to marker: ${marker.name}`, marker.position)
+      } catch (error) {
+        console.error(`[Dashboard] Error teleporting to marker:`, error)
+        toast.error('Ошибка телепортации')
       }
     }
   }
@@ -538,6 +602,49 @@ const Dashboard = () => {
                       </div>
                     )
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Избранные маркеры телепортации */}
+            {favoriteTeleportMarkers.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-400 mb-3 flex items-center gap-1.5">
+                  <Navigation className="w-3.5 h-3.5 text-green-400" />
+                  Телепорты:
+                </h3>
+                <div className="space-y-2">
+                  {favoriteTeleportMarkers.map(marker => (
+                    <div
+                      key={marker.id}
+                      onClick={() => teleportToMarker(marker)}
+                      className="w-full p-3 bg-base-700/50 border border-base-600 rounded-lg transition-all duration-200 group hover:bg-base-600/50 hover:border-green-500/30 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div className="w-8 h-8 bg-green-600/20 rounded-lg flex items-center justify-center group-hover:bg-green-600/30 transition-colors">
+                            <Navigation className="w-4 h-4 text-green-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">
+                              {marker.name}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              {marker.position.x.toFixed(1)}, {marker.position.y.toFixed(1)}, {marker.position.z.toFixed(1)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-500 group-hover:text-green-400 transition-colors">
+                            Телепорт
+                          </div>
+                          <div className="w-5 h-5 bg-green-600/20 rounded flex items-center justify-center group-hover:bg-green-600/30 transition-colors">
+                            <Navigation className="w-3 h-3 text-green-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
