@@ -761,6 +761,15 @@ const VehiclesPage = () => {
   const [focusMode, setFocusMode] = useState<'off' | 'tuning' | 'actions'>('off') // Режим фокуса: выкл / на параметры / на действия
   const [userManuallyCollapsed, setUserManuallyCollapsed] = useState(false) // Отслеживание ручного сворачивания панелей
   const [showYftViewer, setShowYftViewer] = useState(false) // YFT 3D Viewer в полноэкранном режиме
+  const [yftGameViewActive, setYftGameViewActive] = useState(false) // YFT Viewer в режиме Game View
+  
+  // Отправляем событие изменения Game View в App
+  useEffect(() => {
+    console.log('[Dashboard] 📡 Dispatching game view change:', yftGameViewActive)
+    const event = new CustomEvent('yft-game-view-changed', { detail: { active: yftGameViewActive } })
+    window.dispatchEvent(event)
+  }, [yftGameViewActive])
+  
   const panelLeft = 420 // сдвиг от левого края (примерно ширина меню + отступ)
   const [activeModel] = useState<string>('')
   const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
@@ -1689,14 +1698,26 @@ const VehiclesPage = () => {
       {panelsVisible && (
         <Portal>
         <div 
-          className="pointer-events-auto fixed top-16 bottom-4 z-[9999] flex flex-col space-y-3 transition-all duration-300" 
-          style={{ 
-            left: focusMode !== 'off' ? 24 : panelLeft, 
-            right: 24 
+          className="pointer-events-auto fixed z-[9999] flex flex-col space-y-3 transition-all duration-300" 
+          style={yftGameViewActive ? {
+            // Game View режим - полноэкранный режим
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'transparent'
+          } : {
+            // Обычный режим - панели справа
+            top: '4rem',
+            bottom: '1rem',
+            left: focusMode !== 'off' ? 24 : panelLeft,
+            right: 24
           }}
         >
-          {/* Header over both panels - скрыть в режиме фокуса */}
-          {focusMode === 'off' && (
+          {/* Header over both panels - скрыть в режиме фокуса и Game View */}
+          {focusMode === 'off' && !yftGameViewActive && (
             <div
               className={`rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left ${
                 // Динамическая ширина на основе количества видимых панелей
@@ -1743,12 +1764,44 @@ const VehiclesPage = () => {
               </div>
             </div>
           )}
-          {/* YFT Viewer занимает всё пространство (1884px) */}
+          
+          {/* YFT Viewer занимает всё пространство (1884px в обычном режиме, 100% в Game View) */}
           {showYftViewer && selectedVehicle && (selectedVehicle.name || selectedVehicle.modelName) && (
-            <div className="w-[1884px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg animate-slide-in-left">
+            <div 
+              className={yftGameViewActive 
+                ? "w-full h-full overflow-hidden" 
+                : "w-[1884px] h-[calc(100vh-190px)] overflow-hidden animate-slide-in-left"
+              }
+              style={yftGameViewActive ? {
+                background: 'transparent',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '0',
+                width: '100%',
+                height: '100%'
+              } : {
+                background: 'rgba(17, 24, 39, 0.8)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(55, 65, 81, 1)',
+                borderRadius: '0.5rem'
+              }}
+            >
               <YftViewer 
                 vehicleName={selectedVehicle.name || selectedVehicle.modelName!} 
-                onClose={() => setShowYftViewer(false)} 
+                onClose={() => {
+                  // Сбрасываем focus mode перед закрытием
+                  ;(globalThis as any).__focusMode = 'off'
+                  if ((window as any).alt) {
+                    ;(window as any).alt.emit('yft-viewer:focus-mode', { mode: 'off' })
+                  }
+                  console.log('[App] YftViewer closed - reset focus mode')
+                  setShowYftViewer(false)
+                  setYftGameViewActive(false)
+                }} 
+                onGameViewChange={(active) => {
+                  console.log('[App] Game View changed:', active)
+                  setYftGameViewActive(active)
+                }}
               />
             </div>
           )}
@@ -2681,6 +2734,28 @@ interface MenuItem {
 function App() {
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const [currentPage, setCurrentPage] = useState('dashboard')
+  const [yftGameViewActive, setYftGameViewActive] = useState(false) // Game View mode from YFT Viewer
+  const [focusMode, setFocusMode] = useState<string>('off') // Состояние для focusMode
+  
+  // Устанавливаем глобальный флаг для доступа из Dashboard
+  useEffect(() => {
+    ;(window as any).__yftGameViewActive = yftGameViewActive
+  }, [yftGameViewActive])
+  
+  // Слушаем изменения Game View от Dashboard
+  useEffect(() => {
+    const handleGameViewChange = (e: CustomEvent) => {
+      console.log('[App] 🎮 Game View changed:', e.detail.active)
+      setYftGameViewActive(e.detail.active)
+    }
+    window.addEventListener('yft-game-view-changed' as any, handleGameViewChange)
+    return () => window.removeEventListener('yft-game-view-changed' as any, handleGameViewChange)
+  }, [])
+  
+  // Логируем состояние Game View
+  useEffect(() => {
+    console.log('[App] 🎯 yftGameViewActive state:', yftGameViewActive)
+  }, [yftGameViewActive])
   
   // Отправляем событие смены страницы в ALT:V клиент
   useEffect(() => {
@@ -2775,7 +2850,12 @@ function App() {
     }
 
     // Слушаем изменения focusMode для перерисовки
-    const handleFocusModeChange = () => {
+    const handleFocusModeChange = (e: Event) => {
+      const customEvent = e as CustomEvent
+      const newMode = customEvent.detail?.mode || 'off'
+      console.log('[App] 📍 FocusMode changed to:', newMode)
+      console.log('[App] 📍 Previous focusMode was:', focusMode)
+      setFocusMode(newMode)
       forceUpdate({})
     }
     
@@ -2863,12 +2943,41 @@ function App() {
     )
   }
 
+  console.log('[App] 🎨 RENDER - yftGameViewActive:', yftGameViewActive)
+  console.log('[App] 🎨 RENDER - focusMode:', focusMode)
+  console.log('[App] 🎨 CONDITION - focusMode !== "game-view":', focusMode !== 'game-view')
+  console.log('[App] 🎨 CONDITION - should show header:', focusMode !== 'game-view')
+  
   return (
     <div className={`webview-panel w-full h-full flex flex-col animate-slide-in-right transition-opacity duration-300 ${
-      (window as any).__focusMode !== 'off' && (window as any).__focusMode ? 'opacity-0 pointer-events-none' : ''
-    }`}>
-      {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-base-700">
+      // Скрываем весь UI кроме game-view режима (там только YftViewer остаётся видимым)
+      focusMode !== 'off' && focusMode !== 'game-view' && focusMode ? 'opacity-0 pointer-events-none' : ''
+    } ${
+      // В Game View режиме делаем webview-panel прозрачным
+      focusMode === 'game-view' ? 'game-view-transparent' : ''
+    }`}
+    style={focusMode === 'game-view' ? {
+      background: 'transparent !important',
+      backgroundColor: 'transparent !important',
+      backdropFilter: 'none',
+      border: 'none',
+      borderLeft: 'none'
+    } : undefined}
+    >
+      
+      {/* Header - скрываем в Game View режиме */}
+      {(() => {
+        console.log('[App] 🎨 Header RENDER - focusMode:', focusMode, 'should hide:', focusMode === 'game-view')
+        return null
+      })()}
+      <div 
+        className="flex-shrink-0 p-4 border-b border-base-700"
+        style={{ 
+          display: focusMode === 'game-view' ? 'none' : 'block',
+          opacity: focusMode === 'game-view' ? 0 : 1,
+          pointerEvents: focusMode === 'game-view' ? 'none' : 'auto'
+        }}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -2900,8 +3009,19 @@ function App() {
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex-shrink-0 p-4 border-b border-base-700">
+      {/* Navigation - скрываем в Game View режиме */}
+      {(() => {
+        console.log('[App] 🎨 Navigation RENDER - focusMode:', focusMode, 'should hide:', focusMode === 'game-view')
+        return null
+      })()}
+      <div 
+        className="flex-shrink-0 p-4 border-b border-base-700"
+        style={{ 
+          display: focusMode === 'game-view' ? 'none' : 'block',
+          opacity: focusMode === 'game-view' ? 0 : 1,
+          pointerEvents: focusMode === 'game-view' ? 'none' : 'auto'
+        }}
+      >
         <div className="space-y-2">
           <button
             onClick={() => setCurrentPage('dashboard')}
@@ -2942,12 +3062,26 @@ function App() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div 
+        className="flex-1 overflow-y-auto"
+        style={{ 
+          display: focusMode === 'game-view' ? 'none' : 'block',
+          opacity: focusMode === 'game-view' ? 0 : 1,
+          pointerEvents: focusMode === 'game-view' ? 'none' : 'auto'
+        }}
+      >
         <CurrentComponent />
       </div>
 
-      {/* Footer */}
-      <div className="flex-shrink-0 p-4 border-t border-base-700">
+      {/* Footer - скрываем в Game View режиме */}
+      <div 
+        className="flex-shrink-0 p-4 border-t border-base-700"
+        style={{ 
+          display: focusMode === 'game-view' ? 'none' : 'block',
+          opacity: focusMode === 'game-view' ? 0 : 1,
+          pointerEvents: focusMode === 'game-view' ? 'none' : 'auto'
+        }}
+      >
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${

@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 interface YftViewerProps {
   vehicleName: string
   onClose: () => void
+  onGameViewChange?: (active: boolean) => void
 }
 
 interface MeshData {
@@ -143,12 +144,13 @@ function VehicleModel({ meshData, viewMode }: { meshData: MeshData; viewMode: 'w
 /**
  * Главный компонент YFT Viewer
  */
-export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
+export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerProps) {
   const [meshData, setMeshData] = useState<MeshData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showGrid, setShowGrid] = useState(true)
   const [viewMode, setViewMode] = useState<'wireframe' | 'solid' | 'real'>('real')
+  const [gameViewMode, setGameViewMode] = useState(false) // Режим наложения на игру
   const [progress, setProgress] = useState<{ v: number; i: number; phase: 'idle' | 'start' | 'chunk' | 'end' }>(
     { v: 0, i: 0, phase: 'idle' }
   )
@@ -158,30 +160,62 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
     loadMeshData()
   }, [vehicleName])
   
-  // Отключаем глобальный ПКМ обработчик в режиме 3D viewer
+  // Обработка ESC для выхода из Game View
   useEffect(() => {
-    // ВАЖНО: Устанавливаем глобальный флаг для events.js
-    ;(globalThis as any).__focusMode = 'yft-viewer'
-    console.log('[YftViewer] Set globalThis.__focusMode = yft-viewer (WebView context)')
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && gameViewMode) {
+        console.log('[YftViewer] ESC pressed in Game View - exiting...')
+        setGameViewMode(false)
+      }
+    }
     
-    // КРИТИЧЕСКИ ВАЖНО: Отправляем событие в Alt:V Client-side JS
-    // Потому что WebView и Client JS - это РАЗНЫЕ контексты!
-    if ((window as any).alt) {
-      ;(window as any).alt.emit('yft-viewer:focus-mode', { mode: 'yft-viewer' })
-      console.log('[YftViewer] ✅ Sent yft-viewer:focus-mode to Alt:V Client')
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [gameViewMode])
+  
+  // Уведомляем App о смене Game View режима
+  useEffect(() => {
+    if (onGameViewChange) {
+      onGameViewChange(gameViewMode)
+    }
+  }, [gameViewMode, onGameViewChange])
+  
+  // Управляем скрытием UI в Game View режиме
+  useEffect(() => {
+    if (gameViewMode) {
+      // В Game View режиме - скрываем основной UI
+      const focusMode = 'game-view'
+      ;(globalThis as any).__focusMode = focusMode
+      ;(window as any).__focusMode = focusMode
+      console.log(`[YftViewer] Set __focusMode = ${focusMode} (Game View ON)`)
+      
+      // Отправляем CUSTOM EVENT для перерендера App
+      window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: focusMode } }))
+      console.log(`[YftViewer] ✅ Dispatched focusModeChanged event: ${focusMode}`)
+      
+      // Отправляем событие в Alt:V Client-side JS
+      if ((window as any).alt) {
+        ;(window as any).alt.emit('yft-viewer:focus-mode', { mode: focusMode })
+        console.log(`[YftViewer] ✅ Sent yft-viewer:focus-mode ${focusMode} to Alt:V Client`)
+      }
+    } else {
+      // В обычном режиме YftViewer - НЕ скрываем основной UI
+      console.log(`[YftViewer] Game View OFF - not changing focusMode`)
     }
     
     const handleRightClick = (e: MouseEvent) => {
-      // Блокируем только ПКМ, который переключает фокус на игру
-      e.preventDefault()
-      e.stopPropagation()
-      return false
+      // Блокируем только ПКМ, который переключает фокус на игру (только если НЕ в Game View)
+      if (!gameViewMode) {
+        e.preventDefault()
+        e.stopPropagation()
+        return false
+      }
     }
     
     // Добавляем обработчик на весь документ
     document.addEventListener('contextmenu', handleRightClick, true) // capture phase
     document.addEventListener('mousedown', (e) => {
-      if (e.button === 2) { // ПКМ
+      if (e.button === 2 && !gameViewMode) { // ПКМ (только если НЕ в Game View)
         e.preventDefault()
         e.stopPropagation()
         return false
@@ -189,20 +223,27 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
     }, true) // capture phase
     
     return () => {
-      // Восстанавливаем обычный режим
-      ;(globalThis as any).__focusMode = 'off'
-      console.log('[YftViewer] Reset globalThis.__focusMode = off (WebView context)')
-      
-      // Отправляем событие в Alt:V Client-side JS
-      if ((window as any).alt) {
-        ;(window as any).alt.emit('yft-viewer:focus-mode', { mode: 'off' })
-        console.log('[YftViewer] ✅ Sent yft-viewer:focus-mode OFF to Alt:V Client')
+      // Восстанавливаем обычный режим ТОЛЬКО если был в Game View
+      if (gameViewMode) {
+        ;(globalThis as any).__focusMode = 'off'
+        ;(window as any).__focusMode = 'off'
+        console.log('[YftViewer] Reset __focusMode = off (Game View was ON)')
+        
+        // Отправляем CUSTOM EVENT для перерендера App
+        window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: 'off' } }))
+        console.log('[YftViewer] ✅ Dispatched focusModeChanged event: off')
+        
+        // Отправляем событие в Alt:V Client-side JS
+        if ((window as any).alt) {
+          ;(window as any).alt.emit('yft-viewer:focus-mode', { mode: 'off' })
+          console.log('[YftViewer] ✅ Sent yft-viewer:focus-mode OFF to Alt:V Client')
+        }
       }
       
       document.removeEventListener('contextmenu', handleRightClick, true)
       document.removeEventListener('mousedown', handleRightClick, true)
     }
-  }, [])
+  }, [gameViewMode])
   
   /**
    * Загрузка mesh данных через ALT:V → C# CodeWalker
@@ -358,9 +399,16 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
   }
   
   return (
-    <div className="w-full h-full flex flex-col">
+    <div 
+      className={`w-full h-full flex flex-col ${gameViewMode ? 'game-view-transparent' : ''}`}
+      style={gameViewMode ? { 
+        background: 'transparent',
+        backgroundColor: 'transparent'
+      } : undefined}
+    >
       {/* Контейнер viewer занимает всё пространство родителя */}
-        {/* Header */}
+        {/* Header - скрываем в Game View режиме */}
+        {!gameViewMode && (
         <div className="flex items-center justify-between px-6 py-4 border-b border-base-700">
           <div className="flex items-center space-x-3">
             <Box className="w-5 h-5 text-primary-400" />
@@ -426,6 +474,24 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
               <span>Real View</span>
             </button>
             
+            {/* Разделитель */}
+            <div className="w-px h-8 bg-base-700" />
+            
+            {/* Game View */}
+            <button
+              onClick={() => setGameViewMode(!gameViewMode)}
+              disabled={loading}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                gameViewMode
+                  ? 'bg-orange-600 text-white animate-pulse'
+                  : 'bg-base-800 text-gray-400 hover:bg-base-700'
+              }`}
+              title="Game View - наложение на машину в игре (ESC для выхода)"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Game View</span>
+            </button>
+            
             {/* Toggle Grid */}
             <button
               onClick={() => setShowGrid(!showGrid)}
@@ -459,9 +525,34 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
             </button>
           </div>
         </div>
+        )}
         
         {/* 3D Canvas */}
-        <div className="flex-1 relative bg-gradient-to-b from-base-900 to-black">
+        <div 
+          className={`flex-1 relative ${gameViewMode ? '' : 'bg-gradient-to-b from-base-900 to-black'}`}
+          style={gameViewMode ? {
+            background: 'transparent',
+            backgroundColor: 'transparent'
+          } : undefined}
+        >
+          
+          {/* Экстренная кнопка выхода из Game View */}
+          {gameViewMode && (
+            <div className="absolute top-4 right-4 z-50 flex flex-col items-end space-y-2">
+              <button
+                onClick={() => setGameViewMode(false)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-lg flex items-center space-x-2 transition-all animate-pulse"
+                title="Выйти из Game View (ESC)"
+              >
+                <X className="w-4 h-4" />
+                <span className="font-medium">Выход (ESC)</span>
+              </button>
+              <div className="text-xs text-white bg-black/70 px-3 py-2 rounded-lg">
+                Game View Mode Active
+              </div>
+            </div>
+          )}
+          
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center z-10">
               <div className="text-center space-y-3">
@@ -504,7 +595,16 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
           )}
           
           {!loading && !error && meshData && (
-            <Canvas>
+            <Canvas 
+              gl={{ 
+                alpha: true,
+                premultipliedAlpha: false,
+                preserveDrawingBuffer: true
+              }}
+              style={{ 
+                background: gameViewMode ? 'transparent' : 'linear-gradient(to bottom, #0a0a0a, #000000)'
+              }}
+            >
               <Suspense fallback={null}>
                 {/* Камера */}
                 <PerspectiveCamera makeDefault position={[5, 3, 5]} />
@@ -514,8 +614,8 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
                 <directionalLight position={[10, 10, 5]} intensity={1} />
                 <pointLight position={[-10, -10, -5]} intensity={0.5} />
                 
-                {/* Сетка координат */}
-                {showGrid && (
+                {/* Сетка координат - скрываем в Game View режиме */}
+                {showGrid && !gameViewMode && (
                   <ThreeGrid 
                     args={[20, 20]} 
                     cellColor="#444444" 
@@ -551,7 +651,8 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
           )}
         </div>
         
-        {/* Footer - Controls Help */}
+        {/* Footer - Controls Help - скрываем в Game View режиме */}
+        {!gameViewMode && (
         <div className="px-6 py-3 border-t border-base-700 bg-base-800/50">
           <div className="flex items-center justify-between text-xs text-gray-400">
             <div className="flex items-center space-x-4">
@@ -569,6 +670,7 @@ export function YftViewer({ vehicleName, onClose }: YftViewerProps) {
             </div>
           </div>
         </div>
+        )}
     </div>
   )
 }

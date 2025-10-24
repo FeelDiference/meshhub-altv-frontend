@@ -12,8 +12,9 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../dist',
-    emptyOutDir: true,
+    // Билдим сразу в правильную папку ALT:V сервера
+    outDir: '../../altv-server/resources/meshhub/client',
+    emptyOutDir: true, // Автоматически очищает старые файлы перед каждой сборкой
   },
   server: {
     port: 3000,

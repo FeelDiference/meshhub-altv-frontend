@@ -130,3 +130,13 @@ html, body {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* Game View - полная прозрачность */
+.game-view-transparent {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.game-view-transparent > * {
+  background: transparent !important;
+}
