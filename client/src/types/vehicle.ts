@@ -1,5 +1,7 @@
 // Типы для автомобилей
 
+import type { GTAVVehicle } from '@/data/gtav-vehicles-with-categories'
+
 export interface Vec3 {
   x: number
   y: number
@@ -158,3 +160,9 @@ export interface UpdatedInfo {
   hashSHA256: string
   updatedAt: string
 }
+
+// Общий тип для всех машин (HUB + GTAV)
+export type AnyVehicle = VehicleResource | (GTAVVehicle & { 
+  id: string
+  modelName: string
+})

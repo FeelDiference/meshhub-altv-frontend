@@ -1,5 +1,7 @@
 // Weapon resource types
 
+import type { GTAVWeapon } from '@/data/gtav-weapons'
+
 export interface WeaponResource {
   id: string
   name: string
@@ -37,4 +39,11 @@ export interface WeaponArchive {
 }
 
 export type WeaponStatus = 'not_installed' | 'installing' | 'installed' | 'error'
+
+// Общий тип для всего оружия (HUB + GTAV)
+export type AnyWeapon = WeaponResource | (GTAVWeapon & { 
+  isGTAV: true
+  id: string
+  modelName: string
+})
 
