@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useALTV } from '../../hooks/useALTV'
+import { useFavorites } from '../../hooks/useFavorites'
 import { getInteriors } from '../../services/interiors'
 import { 
   downloadInteriorToLocal, 
@@ -8,6 +9,7 @@ import {
 } from '../../services/interiorManager'
 import { getAccessToken } from '../../services/auth'
 import type { InteriorResource, Interior, InteriorStatus } from '../../types/interior'
+import type { FavoriteLocation } from '../../types/favorites'
 import toast from 'react-hot-toast'
 import { 
   Download, 
@@ -23,7 +25,6 @@ import {
   HardDrive,
   Star
 } from 'lucide-react'
-// import { Button } from '../common/Button'
 
 export function InteriorsPage() {
   const { isAvailable } = useALTV()
@@ -33,67 +34,27 @@ export function InteriorsPage() {
   const [interiorStatuses, setInteriorStatuses] = useState<Map<string, InteriorStatus>>(new Map())
   const [activeTab] = useState<'hub' | 'gtav' | 'local'>('hub')
   const [expandedInteriors, setExpandedInteriors] = useState<Set<string>>(new Set())
-  const [favoriteLocations, setFavoriteLocations] = useState<Set<string>>(new Set())
+  
+  // Используем централизованный хук избранного
+  const { toggle, has } = useFavorites()
 
   useEffect(() => {
     loadInteriors()
-    loadFavorites()
   }, [activeTab])
 
-  const loadFavorites = () => {
-    try {
-      const stored = localStorage.getItem('interior_favorites')
-      if (stored) {
-        setFavoriteLocations(new Set(JSON.parse(stored)))
+  /**
+   * Переключить избранное для локации
+   */
+  const toggleFavorite = async (locationId: string, locationData?: {name: string, coords: {x: number, y: number, z: number}}) => {
+    if (locationData) {
+      const location: FavoriteLocation = {
+        id: locationId,
+        name: locationData.name,
+        coords: locationData.coords
       }
-    } catch (e) {
-      console.warn('Failed to load favorites:', e)
+      
+      await toggle('location', location)
     }
-  }
-
-  const saveFavorites = (favorites: Set<string>) => {
-    try {
-      localStorage.setItem('interior_favorites', JSON.stringify([...favorites]))
-    } catch (e) {
-      console.warn('Failed to save favorites:', e)
-    }
-  }
-
-  const toggleFavorite = (locationId: string, locationData?: {name: string, coords: {x: number, y: number, z: number}}) => {
-    const newFavorites = new Set(favoriteLocations)
-    if (newFavorites.has(locationId)) {
-      newFavorites.delete(locationId)
-      // Удаляем из детальных данных
-      try {
-        const stored = localStorage.getItem('interior_favorite_locations')
-        if (stored) {
-          const locations = JSON.parse(stored)
-          const filtered = locations.filter((loc: any) => loc.id !== locationId)
-          localStorage.setItem('interior_favorite_locations', JSON.stringify(filtered))
-        }
-      } catch (e) {
-        console.warn('Failed to remove from detailed favorites:', e)
-      }
-    } else {
-      newFavorites.add(locationId)
-      // Сохраняем детальные данные для отображения на Dashboard
-      if (locationData) {
-        try {
-          const stored = localStorage.getItem('interior_favorite_locations')
-          const locations = stored ? JSON.parse(stored) : []
-          locations.push({
-            id: locationId,
-            name: locationData.name,
-            coords: locationData.coords
-          })
-          localStorage.setItem('interior_favorite_locations', JSON.stringify(locations))
-        } catch (e) {
-          console.warn('Failed to save detailed favorites:', e)
-        }
-      }
-    }
-    setFavoriteLocations(newFavorites)
-    saveFavorites(newFavorites)
   }
 
   const loadInteriors = async () => {
@@ -400,18 +361,15 @@ export function InteriorsPage() {
                                     name: archetype,
                                     coords: pos
                                   })
-                                  try { 
-                                    toast.success(favoriteLocations.has(loc.id) ? 'Удалено из избранного' : 'Добавлено в избранное') 
-                                  } catch {}
                                 }}
                                 className={`p-2 rounded transition-colors ${
-                                  favoriteLocations.has(loc.id)
+                                  has('location', loc.id)
                                     ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-900/20'
                                     : 'text-gray-400 hover:text-yellow-400 hover:bg-yellow-900/10'
                                 }`}
-                                title={favoriteLocations.has(loc.id) ? 'Удалить из избранного' : 'Добавить в избранное'}
+                                title={has('location', loc.id) ? 'Удалить из избранного' : 'Добавить в избранное'}
                               >
-                                <Star className={`w-4 h-4 ${favoriteLocations.has(loc.id) ? 'fill-current' : ''}`} />
+                                <Star className={`w-4 h-4 ${has('location', loc.id) ? 'fill-current' : ''}`} />
                               </button>
                               {isAvailable && (
                                 <button

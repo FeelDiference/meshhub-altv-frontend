@@ -4,7 +4,9 @@
  * Без тяжелых зависимостей - работает мгновенно в ALT:V WebView
  */
 
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect } from 'react'
+import Editor, { OnMount } from '@monaco-editor/react'
+import type * as Monaco from 'monaco-editor'
 
 interface MonacoXMLEditorProps {
   value: string
@@ -14,40 +16,6 @@ interface MonacoXMLEditorProps {
   readOnly?: boolean
 }
 
-/**
- * Простая подсветка синтаксиса XML
- */
-function highlightXML(code: string): string {
-  return code
-    // XML declaration
-    .replace(/(&lt;\?xml[^?]*\?&gt;)/g, '<span class="xml-declaration">$1</span>')
-    // Comments
-    .replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="xml-comment">$1</span>')
-    // Tags
-    .replace(/(&lt;\/?)(\w+)/g, '$1<span class="xml-tag">$2</span>')
-    // Attributes
-    .replace(/(\w+)=/g, '<span class="xml-attr">$1</span>=')
-    // Attribute values
-    .replace(/="([^"]*)"/g, '=<span class="xml-value">"$1"</span>')
-    // Numbers in values
-    .replace(/(<span class="xml-value">")([-\d.]+)(")/g, '$1<span class="xml-number">$2</span>$3')
-    // Closing brackets
-    .replace(/(&gt;)/g, '<span class="xml-bracket">$1</span>')
-    .replace(/(&lt;)/g, '<span class="xml-bracket">$1</span>')
-}
-
-/**
- * Экранирование HTML
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
 export function MonacoXMLEditor({ 
   value, 
   onChange, 
@@ -55,9 +23,8 @@ export function MonacoXMLEditor({
   height = '70vh',
   readOnly = false
 }: MonacoXMLEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const highlightRef = useRef<HTMLDivElement>(null)
-  const [highlightedLine, setHighlightedLine] = useState<number | null>(null)
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+  const monacoRef = useRef<typeof Monaco | null>(null)
   
   // Обработчик монтирования Monaco Editor
   const handleEditorDidMount: OnMount = (editor, monaco) => {

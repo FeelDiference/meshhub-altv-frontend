@@ -1,0 +1,531 @@
+/**
+ * Централизованный сервис для работы с избранным
+ * Единый источник правды для всей системы избранного
+ */
+
+import type { 
+  FavoritesState, 
+  FavoritesStorageData, 
+  FavoriteType,
+  IFavoritesService 
+} from '@/types/favorites'
+import { FAVORITE_CONFIGS } from '@/config/favorites'
+
+// ============================================================================
+// Константы
+// ============================================================================
+
+const STORAGE_KEY = 'meshhub_favorites_v2'
+const STORAGE_VERSION = 2
+const SYNC_DEBOUNCE_MS = 300
+
+// ============================================================================
+// Начальное состояние
+// ============================================================================
+
+const INITIAL_STATE: FavoritesState = {
+  weather: [],
+  time: [],
+  timeSpeed: [],
+  vehicles: [],
+  vehicleActions: [],
+  weaponActions: [],
+  locations: [],
+  teleportMarkers: [],
+}
+
+// ============================================================================
+// FavoritesStorage - Основной класс
+// ============================================================================
+
+/**
+ * Класс для работы с хранилищем избранного
+ * Абстракция над localStorage + Alt:V LocalStorage
+ */
+class FavoritesStorage implements IFavoritesService {
+  private state: FavoritesState = { ...INITIAL_STATE }
+  private subscribers: Set<(state: FavoritesState) => void> = new Set()
+  private syncTimeout: NodeJS.Timeout | null = null
+  private initialized = false
+
+  /**
+   * Инициализация - загрузка данных из хранилища
+   */
+  async init(): Promise<void> {
+    if (this.initialized) return
+    
+    console.log('[FavoritesService] Initializing...')
+    
+    // 1. Пытаемся загрузить из нового единого хранилища
+    const loaded = await this.loadFromStorage()
+    
+    if (loaded) {
+      console.log('[FavoritesService] Loaded from unified storage')
+      this.state = loaded
+    } else {
+      // 2. Если нет, запускаем миграцию старых данных
+      console.log('[FavoritesService] No unified storage found, checking for legacy data...')
+      const migrated = await this.migrateLegacyData()
+      
+      if (migrated) {
+        console.log('[FavoritesService] Migrated legacy data successfully')
+        this.state = migrated
+        await this.saveToStorage()
+      }
+    }
+    
+    // 3. Синхронизация с Alt:V
+    await this.syncWithAltV()
+    
+    this.initialized = true
+    console.log('[FavoritesService] Initialized with state:', this.state)
+    
+    // Уведомляем подписчиков
+    this.notifySubscribers()
+  }
+
+  /**
+   * Получить все избранное по типу
+   */
+  async get<T>(type: FavoriteType): Promise<T[]> {
+    if (!this.initialized) await this.init()
+    
+    // Маппинг типов к полям state
+    const typeToField: Record<FavoriteType, keyof FavoritesState> = {
+      weather: 'weather',
+      time: 'time',
+      timeSpeed: 'timeSpeed',
+      vehicle: 'vehicles',
+      vehicleAction: 'vehicleActions',
+      weaponAction: 'weaponActions',
+      location: 'locations',
+      teleportMarker: 'teleportMarkers'
+    }
+    
+    const field = typeToField[type]
+    return this.state[field] as T[]
+  }
+
+  /**
+   * Получить все избранное
+   */
+  async getAll(): Promise<FavoritesState> {
+    if (!this.initialized) await this.init()
+    return { ...this.state }
+  }
+
+  /**
+   * Проверить наличие в избранном
+   */
+  has(type: FavoriteType, id: string): boolean {
+    // Маппинг типов к полям state
+    const typeToField: Record<FavoriteType, keyof FavoritesState> = {
+      weather: 'weather',
+      time: 'time',
+      timeSpeed: 'timeSpeed',
+      vehicle: 'vehicles',
+      vehicleAction: 'vehicleActions',
+      weaponAction: 'weaponActions',
+      location: 'locations',
+      teleportMarker: 'teleportMarkers'
+    }
+    
+    const field = typeToField[type]
+    const items: any[] = this.state[field] as any[]
+    
+    if (!Array.isArray(items) || items.length === 0) {
+      return false
+    }
+    
+    // Для примитивов (string, number)
+    if (typeof items[0] === 'string') {
+      return (items as string[]).includes(id)
+    }
+    
+    if (typeof items[0] === 'number') {
+      const numId = parseFloat(id)
+      return !isNaN(numId) && (items as number[]).includes(numId)
+    }
+    
+    // Для объектов (locations, teleportMarkers)
+    return items.some((item: any) => {
+      if (typeof item === 'object' && item !== null && 'id' in item) {
+        return item.id === id
+      }
+      return false
+    })
+  }
+
+  /**
+   * Добавить в избранное
+   */
+  async add<T>(type: FavoriteType, item: T): Promise<void> {
+    if (!this.initialized) await this.init()
+    
+    console.log(`[FavoritesService] Adding to ${type}:`, item)
+    
+    // Маппинг типов к полям state
+    const typeToField: Record<FavoriteType, keyof FavoritesState> = {
+      weather: 'weather',
+      time: 'time',
+      timeSpeed: 'timeSpeed',
+      vehicle: 'vehicles',
+      vehicleAction: 'vehicleActions',
+      weaponAction: 'weaponActions',
+      location: 'locations',
+      teleportMarker: 'teleportMarkers'
+    }
+    
+    const field = typeToField[type]
+    const currentItems = this.state[field] as T[]
+    const config = FAVORITE_CONFIGS[type]
+    
+    // Получаем ID элемента
+    const itemId = config.getId(item)
+    
+    // Проверяем, не добавлен ли уже
+    if (this.has(type, itemId)) {
+      console.log(`[FavoritesService] Item ${itemId} already in favorites`)
+      return
+    }
+    
+    // Добавляем в state
+    this.state = {
+      ...this.state,
+      [field]: [...currentItems, item]
+    }
+    
+    // Сохраняем и синхронизируем
+    await this.saveAndSync()
+  }
+
+  /**
+   * Удалить из избранного
+   */
+  async remove(type: FavoriteType, id: string): Promise<void> {
+    if (!this.initialized) await this.init()
+    
+    console.log(`[FavoritesService] Removing from ${type}:`, id)
+    
+    // Маппинг типов к полям state
+    const typeToField: Record<FavoriteType, keyof FavoritesState> = {
+      weather: 'weather',
+      time: 'time',
+      timeSpeed: 'timeSpeed',
+      vehicle: 'vehicles',
+      vehicleAction: 'vehicleActions',
+      weaponAction: 'weaponActions',
+      location: 'locations',
+      teleportMarker: 'teleportMarkers'
+    }
+    
+    const field = typeToField[type]
+    const currentItems = this.state[field] as any[]
+    
+    // Фильтруем элементы
+    const newItems = currentItems.filter((item: any) => {
+      if (typeof item === 'string' || typeof item === 'number') {
+        return item.toString() !== id
+      }
+      
+      if (typeof item === 'object' && item !== null) {
+        return item.id !== id
+      }
+      
+      return true
+    })
+    
+    // Обновляем state
+    this.state = {
+      ...this.state,
+      [field]: newItems
+    }
+    
+    // Сохраняем и синхронизируем
+    await this.saveAndSync()
+  }
+
+  /**
+   * Переключить избранное
+   */
+  async toggle<T>(type: FavoriteType, item: T): Promise<boolean> {
+    if (!this.initialized) await this.init()
+    
+    const config = FAVORITE_CONFIGS[type]
+    const itemId = config.getId(item)
+    
+    if (this.has(type, itemId)) {
+      await this.remove(type, itemId)
+      return false
+    } else {
+      await this.add(type, item)
+      return true
+    }
+  }
+
+  /**
+   * Синхронизация (общая)
+   */
+  async sync(): Promise<void> {
+    await this.saveToStorage()
+    await this.syncWithAltV()
+  }
+
+  /**
+   * Синхронизация с Alt:V
+   */
+  async syncWithAltV(): Promise<void> {
+    if (typeof window === 'undefined' || !('alt' in window)) return
+    
+    console.log('[FavoritesService] Syncing with Alt:V...')
+    
+    try {
+      const alt = (window as any).alt
+      
+      // Отправляем разные типы избранного на соответствующие каналы Alt:V
+      // Погода, время, скорость времени, teleportMarkers
+      alt.emit('world:favorites:save', { 
+        favorites: {
+          weather: this.state.weather,
+          time: this.state.time,
+          timeSpeed: this.state.timeSpeed,
+          teleportMarkers: this.state.teleportMarkers
+        }
+      })
+      
+      // Автомобили
+      alt.emit('favorites:vehicles:save', { vehicles: this.state.vehicles })
+      
+      // Действия с автомобилем
+      alt.emit('favorites:vehicle-actions:save', { actions: this.state.vehicleActions })
+      
+      // Действия с оружием
+      alt.emit('favorites:weapon-actions:save', { actions: this.state.weaponActions })
+      
+      console.log('[FavoritesService] Synced with Alt:V')
+    } catch (error) {
+      console.error('[FavoritesService] Error syncing with Alt:V:', error)
+    }
+  }
+
+  /**
+   * Подписаться на изменения
+   */
+  subscribe(callback: (state: FavoritesState) => void): () => void {
+    this.subscribers.add(callback)
+    
+    // Сразу вызываем callback с текущим состоянием
+    callback(this.state)
+    
+    // Возвращаем функцию отписки
+    return () => {
+      this.subscribers.delete(callback)
+    }
+  }
+
+  // ========================================================================
+  // Приватные методы
+  // ========================================================================
+
+  /**
+   * Загрузка из localStorage
+   */
+  private async loadFromStorage(): Promise<FavoritesState | null> {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (!stored) return null
+      
+      const parsed: FavoritesStorageData = JSON.parse(stored)
+      
+      // Проверяем версию
+      if (parsed.version !== STORAGE_VERSION) {
+        console.warn(`[FavoritesService] Storage version mismatch: ${parsed.version} vs ${STORAGE_VERSION}`)
+        return null
+      }
+      
+      return parsed.data
+    } catch (error) {
+      console.error('[FavoritesService] Error loading from storage:', error)
+      return null
+    }
+  }
+
+  /**
+   * Сохранение в localStorage
+   */
+  private async saveToStorage(): Promise<void> {
+    try {
+      const data: FavoritesStorageData = {
+        version: STORAGE_VERSION,
+        data: this.state,
+        lastUpdated: Date.now()
+      }
+      
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+      console.log('[FavoritesService] Saved to localStorage')
+    } catch (error) {
+      console.error('[FavoritesService] Error saving to storage:', error)
+    }
+  }
+
+  /**
+   * Сохранение и синхронизация с debounce
+   */
+  private async saveAndSync(): Promise<void> {
+    // Сохраняем сразу
+    await this.saveToStorage()
+    
+    // Уведомляем подписчиков
+    this.notifySubscribers()
+    
+    // Синхронизация с Alt:V с debounce
+    if (this.syncTimeout) {
+      clearTimeout(this.syncTimeout)
+    }
+    
+    this.syncTimeout = setTimeout(() => {
+      this.syncWithAltV()
+    }, SYNC_DEBOUNCE_MS)
+  }
+
+  /**
+   * Уведомить всех подписчиков об изменениях
+   */
+  private notifySubscribers(): void {
+    const stateCopy = { ...this.state }
+    this.subscribers.forEach(callback => {
+      try {
+        callback(stateCopy)
+      } catch (error) {
+        console.error('[FavoritesService] Error in subscriber callback:', error)
+      }
+    })
+    
+    // Также отправляем custom event для глобальной синхронизации
+    window.dispatchEvent(new CustomEvent('favorites:updated', {
+      detail: { state: stateCopy }
+    }))
+  }
+
+  /**
+   * Миграция старых данных
+   */
+  private async migrateLegacyData(): Promise<FavoritesState | null> {
+    console.log('[FavoritesService] Starting legacy data migration...')
+    
+    const migrated: FavoritesState = { ...INITIAL_STATE }
+    let hasMigratedData = false
+    
+    try {
+      // Миграция world favorites (погода, время, скорость, teleportMarkers)
+      const worldFavs = localStorage.getItem('meshhub_world_favorites')
+      if (worldFavs) {
+        const parsed = JSON.parse(worldFavs)
+        migrated.weather = parsed.weather || []
+        migrated.time = parsed.time || []
+        migrated.timeSpeed = parsed.timeSpeed || []
+        migrated.teleportMarkers = parsed.teleportMarkers || []
+        hasMigratedData = true
+        console.log('[FavoritesService] Migrated world favorites')
+      }
+      
+      // Миграция vehicle actions
+      const vehicleActions = localStorage.getItem('vehicle_actions_favorites')
+      if (vehicleActions) {
+        migrated.vehicleActions = JSON.parse(vehicleActions)
+        hasMigratedData = true
+        console.log('[FavoritesService] Migrated vehicle actions')
+      }
+      
+      // Миграция weapon actions
+      const weaponActions = localStorage.getItem('weapon_actions_favorites')
+      if (weaponActions) {
+        migrated.weaponActions = JSON.parse(weaponActions)
+        hasMigratedData = true
+        console.log('[FavoritesService] Migrated weapon actions')
+      }
+      
+      // Миграция interior locations
+      const interiorLocs = localStorage.getItem('interior_favorite_locations')
+      if (interiorLocs) {
+        migrated.locations = JSON.parse(interiorLocs)
+        hasMigratedData = true
+        console.log('[FavoritesService] Migrated interior locations')
+      }
+      
+      // Миграция vehicle favorites (запросим из Alt:V если доступен)
+      // Это асинхронно, но для начальной миграции можем пропустить
+      
+    } catch (error) {
+      console.error('[FavoritesService] Error during migration:', error)
+      return null
+    }
+    
+    return hasMigratedData ? migrated : null
+  }
+}
+
+// ============================================================================
+// Singleton Instance
+// ============================================================================
+
+/**
+ * Глобальный экземпляр сервиса избранного
+ */
+export const favoritesService = new FavoritesStorage()
+
+// ============================================================================
+// Удобные хелперы
+// ============================================================================
+
+/**
+ * Получить избранное по типу
+ */
+export async function getFavorites<T>(type: FavoriteType): Promise<T[]> {
+  return favoritesService.get<T>(type)
+}
+
+/**
+ * Добавить в избранное
+ */
+export async function addFavorite<T>(type: FavoriteType, item: T): Promise<void> {
+  return favoritesService.add(type, item)
+}
+
+/**
+ * Удалить из избранного
+ */
+export async function removeFavorite(type: FavoriteType, id: string): Promise<void> {
+  return favoritesService.remove(type, id)
+}
+
+/**
+ * Переключить избранное
+ */
+export async function toggleFavorite<T>(type: FavoriteType, item: T): Promise<boolean> {
+  return favoritesService.toggle(type, item)
+}
+
+/**
+ * Проверить наличие в избранном
+ */
+export function isFavorite(type: FavoriteType, id: string): boolean {
+  return favoritesService.has(type, id)
+}
+
+/**
+ * Подписаться на изменения избранного
+ */
+export function subscribeFavorites(callback: (state: FavoritesState) => void): () => void {
+  return favoritesService.subscribe(callback)
+}
+
+// Автоматическая инициализация при импорте модуля
+if (typeof window !== 'undefined') {
+  favoritesService.init().catch(err => {
+    console.error('[FavoritesService] Failed to initialize:', err)
+  })
+}
+
+console.log('[FavoritesService] Service module loaded')
+

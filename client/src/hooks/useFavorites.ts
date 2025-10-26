@@ -1,175 +1,69 @@
-// Хук для централизованной работы с избранным
-import { useState, useEffect, useCallback } from 'react'
-
 /**
- * Типы для избранного
+ * Централизованный хук для работы с избранным
+ * Использует FavoritesService как единый источник правды
  */
-export interface Favorites {
-  weather: string[]
-  time: string[]
-  timeSpeed: number[]
-  teleportMarkers: string[]
-}
 
-export interface FavoriteLocation {
-  id: string
-  name: string
-  coords: { x: number; y: number; z: number }
-}
-
-export interface TeleportMarker {
-  id: string
-  name: string
-  position: { x: number; y: number; z: number }
-  createdAt: string
-}
+import { useState, useEffect, useCallback } from 'react'
+import { favoritesService } from '@/services/favoritesService'
+import type { 
+  FavoritesState, 
+  FavoriteType,
+  FavoriteLocation,
+  FavoriteTeleportMarker 
+} from '@/types/favorites'
+import toast from 'react-hot-toast'
 
 /**
  * Хук для управления избранным
- * Работает через Alt:V storage и localStorage для интерьеров
+ * Теперь использует централизованный сервис
  */
 export function useFavorites() {
-  // Избранные настройки (погода, время и т.д.)
-  const [favorites, setFavorites] = useState<Favorites>({
+  // Единое состояние из сервиса
+  const [state, setState] = useState<FavoritesState>({
     weather: [],
     time: [],
     timeSpeed: [],
-    teleportMarkers: []
+    vehicles: [],
+    vehicleActions: [],
+    weaponActions: [],
+    locations: [],
+    teleportMarkers: [],
   })
-  
-  // Избранные локации интерьеров
-  const [favoriteLocations, setFavoriteLocations] = useState<FavoriteLocation[]>([])
-  
-  // Избранные маркеры телепортации
-  const [favoriteTeleportMarkers, setFavoriteTeleportMarkers] = useState<TeleportMarker[]>([])
-  const [allTeleportMarkers, setAllTeleportMarkers] = useState<TeleportMarker[]>([])
-  
-  // Избранные машины
-  const [favoriteVehicles, setFavoriteVehicles] = useState<string[]>([])
   
   // Состояние загрузки
   const [isLoading, setIsLoading] = useState(true)
-
+  
+  // Дополнительные данные для маркеров телепортации (полные объекты)
+  const [allTeleportMarkers, setAllTeleportMarkers] = useState<FavoriteTeleportMarker[]>([])
+  
   /**
-   * Загрузка избранного при монтировании
+   * Подписка на изменения из сервиса
    */
-  const loadFavorites = useCallback(() => {
-    console.log('[useFavorites] Loading favorites...')
+  useEffect(() => {
+    console.log('[useFavorites] Subscribing to favorites service...')
     
-    // Загружаем избранное через Alt:V (персистентное хранилище)
-    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
-      try {
-        ;(window as any).alt.emit('world:favorites:load')
-        console.log('[useFavorites] Requesting favorites from server')
-      } catch (error) {
-        console.error('[useFavorites] Error requesting favorites:', error)
-      }
-    }
-    
-    // Загружаем избранные локации интерьеров из localStorage
-    try {
-      const stored = localStorage.getItem('interior_favorites')
-      const storedLocations = localStorage.getItem('interior_favorite_locations')
-      
-      if (stored && storedLocations) {
-        const favoriteIds = JSON.parse(stored)
-        const locations = JSON.parse(storedLocations)
-        const filteredLocations = locations.filter((loc: any) => favoriteIds.includes(loc.id))
-        setFavoriteLocations(filteredLocations)
-        console.log('[useFavorites] Loaded favorite locations:', filteredLocations.length)
-      }
-    } catch (e) {
-      console.warn('[useFavorites] Failed to load favorite locations:', e)
-    }
-
-    // Загружаем избранные машины через Alt:V
-    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
-      try {
-        ;(window as any).alt.emit('favorites:vehicles:load')
-        console.log('[useFavorites] Requesting favorite vehicles from Alt:V storage')
-      } catch (error) {
-        console.error('[useFavorites] Error requesting favorite vehicles:', error)
-      }
-    }
-    
-    // Загружаем все маркеры телепортации
-    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
-      try {
-        ;(window as any).alt.emit('world:markers:load')
-        console.log('[useFavorites] Requesting teleport markers from server')
-      } catch (error) {
-        console.error('[useFavorites] Error requesting teleport markers:', error)
-      }
-    }
-
-    // Устанавливаем таймаут для завершения загрузки
-    const loadingTimeout = setTimeout(() => {
+    // Подписываемся на обновления из сервиса
+    const unsubscribe = favoritesService.subscribe((newState) => {
+      console.log('[useFavorites] State updated from service:', newState)
+      setState(newState)
       setIsLoading(false)
-      console.log('[useFavorites] Loading timeout - setting isLoading to false')
-    }, 2000)
-
-    return () => clearTimeout(loadingTimeout)
-  }, [])
-
-  // Загрузка при монтировании
-  useEffect(() => {
-    const cleanup = loadFavorites()
-    return cleanup
-  }, [loadFavorites])
-
-  // Обработчик получения избранных настроек
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('alt' in window)) return
+    })
     
-    const handleFavoritesResponse = (data: any) => {
-      console.log('[useFavorites] Received favorites response from server:', data)
-      if (data.success && data.favorites) {
-        console.log('[useFavorites] Using favorites from Alt:V storage:', data.favorites)
-        setFavorites(data.favorites)
-      } else {
-        console.error('[useFavorites] Failed to load favorites:', data.error)
-      }
+    // Инициализация сервиса (если еще не инициализирован)
+    favoritesService.init().then(() => {
+      console.log('[useFavorites] Service initialized')
       setIsLoading(false)
-    }
+    }).catch(err => {
+      console.error('[useFavorites] Service initialization failed:', err)
+      setIsLoading(false)
+    })
     
-    ;(window as any).alt.on('world:favorites:response', handleFavoritesResponse)
-    return () => {
-      ;(window as any).alt.off?.('world:favorites:response', handleFavoritesResponse)
-    }
-  }, [])
-
-  // Обработчик получения избранных машин
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('alt' in window)) return
-    
-    const handleVehicleFavoritesResponse = (data: any) => {
-      console.log('[useFavorites] Received vehicle favorites response:', data)
-      if (data.success && data.vehicles) {
-        setFavoriteVehicles(data.vehicles)
-        console.log('[useFavorites] Updated favorite vehicles from Alt:V:', data.vehicles)
-      } else {
-        console.error('[useFavorites] Failed to load vehicle favorites:', data.error)
-      }
-    }
-
-    const handleVehicleFavoritesUpdated = (data: any) => {
-      console.log('[useFavorites] Vehicle favorites updated:', data)
-      if (data.vehicles) {
-        setFavoriteVehicles(data.vehicles)
-        console.log('[useFavorites] Updated favorite vehicles:', data.vehicles)
-      }
-    }
-
-    ;(window as any).alt.on('favorites:vehicles:response', handleVehicleFavoritesResponse)
-    ;(window as any).alt.on('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
-    
-    return () => {
-      ;(window as any).alt.off?.('favorites:vehicles:response', handleVehicleFavoritesResponse)
-      ;(window as any).alt.off?.('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
-    }
+    return unsubscribe
   }, [])
   
-  // Обработчик получения маркеров телепортации
+  /**
+   * Загрузка полных данных маркеров телепортации
+   */
   useEffect(() => {
     if (typeof window === 'undefined' || !('alt' in window)) return
     
@@ -182,77 +76,165 @@ export function useFavorites() {
     }
 
     ;(window as any).alt.on('world:markers:loaded', handleMarkersLoaded)
+    ;(window as any).alt.emit('world:markers:load')
     
     return () => {
       ;(window as any).alt.off?.('world:markers:loaded', handleMarkersLoaded)
     }
   }, [])
   
-  // Фильтруем избранные маркеры телепортации
-  useEffect(() => {
-    if (allTeleportMarkers.length > 0 && favorites.teleportMarkers && favorites.teleportMarkers.length > 0) {
-      const filtered = allTeleportMarkers.filter(marker => 
-        favorites.teleportMarkers.includes(marker.id)
-      )
-      setFavoriteTeleportMarkers(filtered)
-      console.log(`[useFavorites] Filtered ${filtered.length} favorite teleport markers from ${allTeleportMarkers.length} total`)
-    } else {
-      setFavoriteTeleportMarkers([])
-    }
-  }, [allTeleportMarkers, favorites.teleportMarkers])
-
+  // ========================================================================
+  // Методы для работы с избранным
+  // ========================================================================
+  
   /**
-   * Переключить избранное для машины
+   * Добавить в избранное
    */
-  const toggleVehicleFavorite = useCallback((vehicleName: string) => {
-    console.log(`[useFavorites] Toggling favorite for vehicle: ${vehicleName}`)
+  const add = useCallback(async <T,>(type: FavoriteType, item: T) => {
+    try {
+      await favoritesService.add(type, item)
+      toast.success('Добавлено в избранное')
+    } catch (error) {
+      console.error('[useFavorites] Error adding to favorites:', error)
+      toast.error('Ошибка добавления в избранное')
+    }
+  }, [])
+  
+  /**
+   * Удалить из избранного
+   */
+  const remove = useCallback(async (type: FavoriteType, id: string) => {
+    try {
+      await favoritesService.remove(type, id)
+      toast.success('Удалено из избранного')
+    } catch (error) {
+      console.error('[useFavorites] Error removing from favorites:', error)
+      toast.error('Ошибка удаления из избранного')
+    }
+  }, [])
+  
+  /**
+   * Переключить избранное
+   */
+  const toggle = useCallback(async <T,>(type: FavoriteType, item: T): Promise<boolean> => {
+    try {
+      const newState = await favoritesService.toggle(type, item)
+      toast.success(newState ? 'Добавлено в избранное' : 'Удалено из избранного')
+      return newState
+    } catch (error) {
+      console.error('[useFavorites] Error toggling favorite:', error)
+      toast.error('Ошибка изменения избранного')
+      return false
+    }
+  }, [])
+  
+  /**
+   * Проверить наличие в избранном
+   */
+  const has = useCallback((type: FavoriteType, id: string): boolean => {
+    return favoritesService.has(type, id)
+  }, [])
+  
+  // ========================================================================
+  // Специфичные методы для обратной совместимости
+  // ========================================================================
+  
+  /**
+   * Переключить избранное для машины (legacy compatibility)
+   */
+  const toggleVehicleFavorite = useCallback(async (vehicleName: string) => {
+    await toggle('vehicle', vehicleName)
+  }, [toggle])
+  
+  /**
+   * Проверить, является ли машина избранной (legacy compatibility)
+   */
+  const isVehicleFavorite = useCallback((vehicleName: string): boolean => {
+    return has('vehicle', vehicleName)
+  }, [has])
+  
+  /**
+   * Обновить название локации
+   */
+  const updateLocationName = useCallback(async (locationId: string, newName: string) => {
+    const location = state.locations.find(loc => loc.id === locationId)
+    if (!location) return
     
-    if (typeof window !== 'undefined' && 'alt' in window) {
-      const isFavorite = favoriteVehicles.includes(vehicleName)
-      ;(window as any).alt.emit('favorites:vehicle:toggle', {
-        vehicleName,
-        isFavorite: !isFavorite
-      })
-    } else {
-      console.warn('[useFavorites] Alt:V not available, cannot toggle favorite')
-    }
-  }, [favoriteVehicles])
-
+    // Удаляем старую и добавляем обновленную
+    await remove('location', locationId)
+    await add('location', { ...location, name: newName })
+    
+    toast.success('Название обновлено')
+  }, [state.locations, remove, add])
+  
+  // ========================================================================
+  // Вычисляемые данные
+  // ========================================================================
+  
   /**
-   * Проверить, является ли машина избранной
+   * Фильтрованные маркеры телепортации (только избранные)
    */
-  const isVehicleFavorite = useCallback((vehicleName: string) => {
-    return favoriteVehicles?.includes(vehicleName) || false
-  }, [favoriteVehicles])
-
+  const favoriteTeleportMarkers = allTeleportMarkers.filter(marker => 
+    state.teleportMarkers.includes(marker.id)
+  )
+  
   /**
-   * Проверить, есть ли хоть одно избранное
+   * Проверка наличия хоть одного избранного
    */
   const hasFavorites = 
-    (favorites.weather?.length > 0) || 
-    (favorites.time?.length > 0) || 
-    (favorites.timeSpeed?.length > 0) || 
-    (favoriteLocations?.length > 0) || 
-    (favoriteVehicles?.length > 0) || 
-    (favoriteTeleportMarkers?.length > 0)
-
+    state.weather.length > 0 ||
+    state.time.length > 0 ||
+    state.timeSpeed.length > 0 ||
+    state.vehicles.length > 0 ||
+    state.vehicleActions.length > 0 ||
+    state.weaponActions.length > 0 ||
+    state.locations.length > 0 ||
+    state.teleportMarkers.length > 0
+  
+  // ========================================================================
+  // Возврат
+  // ========================================================================
+  
   return {
-    // Состояния
-    favorites,
-    favoriteLocations,
+    // Состояние (разбито для обратной совместимости)
+    favorites: {
+      weather: state.weather,
+      time: state.time,
+      timeSpeed: state.timeSpeed,
+      teleportMarkers: state.teleportMarkers
+    },
+    favoriteLocations: state.locations,
     favoriteTeleportMarkers,
-    favoriteVehicles,
+    favoriteVehicles: state.vehicles,
+    favoriteVehicleActions: state.vehicleActions,
+    favoriteWeaponActions: state.weaponActions,
+    
+    // Полное состояние
+    state,
+    
+    // Состояние загрузки
     isLoading,
     hasFavorites,
     
-    // Методы
+    // Универсальные методы
+    add,
+    remove,
+    toggle,
+    has,
+    
+    // Legacy методы (для обратной совместимости)
     toggleVehicleFavorite,
     isVehicleFavorite,
-    loadFavorites,
+    updateLocationName,
     
-    // Сеттеры для локаций (пока оставляем здесь для Dashboard)
-    setFavoriteLocations
+    // Сеттеры (deprecated, использовать add/remove вместо них)
+    setFavoriteLocations: (locations: FavoriteLocation[]) => {
+      console.warn('[useFavorites] setFavoriteLocations is deprecated, use add/remove instead')
+      // Обновляем через сервис
+      state.locations.forEach(loc => remove('location', loc.id))
+      locations.forEach(loc => add('location', loc))
+    }
   }
 }
 
-
+export default useFavorites

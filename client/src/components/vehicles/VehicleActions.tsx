@@ -1,33 +1,24 @@
+/**
+ * Компонент действий с автомобилем
+ * Использует централизованную систему избранного и универсальные компоненты
+ */
+
 import React, { useState, useEffect } from 'react'
 import { 
-  Wrench, 
-  Sparkles, 
-  Lightbulb, 
-  ArrowLeft, 
-  ArrowRight, 
-  Shield, 
-  Car,
-  Zap,
-  Radio,
-  Wind,
-  Maximize2,
-  Minimize2,
   ChevronDown,
   ChevronRight,
-  DoorOpen,
-  Car as CarIcon,
-  Lock,
-  Unlock,
-  Gauge,
-  Star,
-  MapPin,
-  Box,
+  Wrench,
   Timer,
-  MapPinned
+  Car,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import VehicleTuning from './VehicleTuning'
 import SpeedTestPanel from './SpeedTestPanel'
+import { FavoriteActionButton } from '@/components/common/FavoriteActionButton'
+import { useFavorites } from '@/hooks/useFavorites'
+import { VEHICLE_ACTION_CONFIGS, VEHICLE_ACTION_GROUPS } from '@/config/favorites'
 
 interface VehicleActionsProps {
   disabled?: boolean
@@ -35,98 +26,89 @@ interface VehicleActionsProps {
   onFocusModeToggle?: () => void
   focusMode?: boolean
   vehicleName?: string
-  onYftViewerToggle?: (show: boolean) => void // Callback для открытия YFT Viewer в полноэкранном режиме
+  onYftViewerToggle?: (show: boolean) => void
 }
 
-const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAction, onFocusModeToggle, focusMode = false, vehicleName, onYftViewerToggle }) => {
+const VehicleActions: React.FC<VehicleActionsProps> = ({ 
+  disabled = false, 
+  onAction, 
+  onFocusModeToggle, 
+  focusMode = false, 
+  vehicleName, 
+  onYftViewerToggle 
+}) => {
   const [showTuning, setShowTuning] = useState(false)
   const [showSpeedTest, setShowSpeedTest] = useState(false)
-  const [favorites, setFavorites] = useState<string[]>([])
+  const [speedometerEnabled, setSpeedometerEnabled] = useState(false)
   
-  // Загрузка избранных действий при монтировании
+  // Используем централизованный хук избранного
+  const { toggle, has } = useFavorites()
+  
+  // Слушаем состояние спидометра от Alt:V
   useEffect(() => {
     if (typeof window !== 'undefined' && 'alt' in window) {
       const alt = (window as any).alt
       
-      // Запрашиваем избранное
-      alt.emit('favorites:vehicle-actions:load')
-      
-      // Слушаем ответ
-      const handleFavoritesResponse = (data: { favorites: string[] }) => {
-        console.log('[VehicleActions] Received favorites:', data.favorites)
-        setFavorites(data.favorites || [])
+      const handleSpeedometerStatus = (data: { enabled: boolean }) => {
+        setSpeedometerEnabled(data.enabled)
       }
       
-      alt.on('favorites:vehicle-actions:response', handleFavoritesResponse)
+      alt.on('speedometer:status', handleSpeedometerStatus)
+      alt.emit('speedometer:get-status')
       
       return () => {
-        alt.off('favorites:vehicle-actions:response', handleFavoritesResponse)
+        alt.off('speedometer:status', handleSpeedometerStatus)
       }
     }
   }, [])
   
-  // Переключение избранного
-  const toggleFavorite = (actionId: string) => {
-    if (typeof window !== 'undefined' && 'alt' in window) {
-      const alt = (window as any).alt
-      const isFavorite = favorites.includes(actionId)
-      
-      alt.emit('favorites:vehicle-action:toggle', { actionId })
-      
-      // Обновляем локальное состояние
-      setFavorites(prev => 
-        isFavorite 
-          ? prev.filter(id => id !== actionId)
-          : [...prev, actionId]
-      )
-      
-      toast.success(isFavorite ? 'Удалено из избранного' : 'Добавлено в избранное')
-    }
-  }
+  /**
+   * Переключить фокус режим
+   */
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
       const newMode = focusMode ? 'off' : 'actions'
       ;(window as any).__focusMode = newMode
-      // Диспатчим событие для перерисовки App
       window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: newMode } }))
       onFocusModeToggle()
     }
   }
   
-  const handleAction = (action: string, data?: any) => {
-    console.log(`[VehicleActions] Action triggered: ${action}`)
+  /**
+   * Выполнить действие
+   */
+  const handleAction = (actionId: string, data?: any) => {
+    console.log(`[VehicleActions] Action triggered: ${actionId}`)
     
-    // Специальная обработка для YFT Viewer - открываем в полноэкранном режиме
-    if (action === 'yft_viewer') {
-      console.log(`[VehicleActions] Opening YFT Viewer for vehicle: ${vehicleName}`)
+    // Специальная обработка для YFT Viewer
+    if (actionId === 'yft_viewer') {
       if (!vehicleName) {
         toast.error('Не выбран автомобиль')
         return
       }
-      // Вызываем callback для открытия на уровне App (полноэкранный режим)
       if (onYftViewerToggle) {
         onYftViewerToggle(true)
       }
       return
     }
     
-    // Специальная обработка для спидометра - отправляем событие в Alt:V
-    if (action === 'speedometer_toggle') {
-      console.log(`[VehicleActions] Speedometer toggle - emitting to Alt:V`)
+    // Специальная обработка для спидометра
+    if (actionId === 'speedometer_toggle') {
       if (typeof window !== 'undefined' && 'alt' in window) {
-        (window as any).alt.emit('speedometer:toggle')
-        toast.success('Спидометр переключен')
+        const newState = !speedometerEnabled
+        setSpeedometerEnabled(newState)
+        ;(window as any).alt.emit('speedometer:toggle')
+        toast.success(newState ? 'Спидометр включен' : 'Спидометр выключен')
       } else {
         toast.error('Alt:V API недоступен')
       }
       return
     }
     
-    // Телепорт на старт Speed Test трассы (работает с машиной и без)
-    if (action === 'teleport_to_location') {
-      console.log(`[VehicleActions] Teleport to Speed Test track requested`)
+    // Специальная обработка для телепорта на трассу
+    if (actionId === 'teleport_to_location') {
       if (typeof window !== 'undefined' && 'alt' in window) {
-        (window as any).alt.emit('speedtest:teleport:track')
+        ;(window as any).alt.emit('speedtest:teleport:track')
         toast.success('Телепорт на старт трассы...')
       } else {
         toast.error('Alt:V API недоступен')
@@ -134,132 +116,41 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
       return
     }
     
-    if (disabled) {
+    // Проверка на наличие автомобиля для действий, требующих его
+    const actionConfig = VEHICLE_ACTION_CONFIGS.find(a => a.id === actionId)
+    if (disabled && actionConfig?.requiresVehicle !== false) {
       toast.error('Вы должны быть в автомобиле для выполнения этого действия')
       return
     }
     
+    // Вызов callback
     if (onAction) {
-      onAction(action, data)
+      onAction(actionId, data)
     }
     
-    // В AltV WebView отправляем событие
+    // Отправка в Alt:V
     if (typeof window !== 'undefined' && 'alt' in window) {
       try {
-        // @ts-ignore
-        if (typeof alt !== 'undefined' && typeof alt.emit === 'function') {
-          // @ts-ignore
-          alt.emit('vehicle:action', { action, data })
-        } else if (typeof (window as any).alt !== 'undefined' && typeof (window as any).alt.emit === 'function') {
-          ;(window as any).alt.emit('vehicle:action', { action, data })
-        }
+        const alt = (window as any).alt
+        alt.emit('vehicle:action', { action: actionId, data })
       } catch (e) {
         console.error('[VehicleActions] Error emitting action:', e)
       }
     }
     
-    toast.success(`Выполнено: ${getActionName(action)}`)
+    toast.success(`Выполнено: ${actionConfig?.label || actionId}`)
   }
-
-  const getActionName = (action: string): string => {
-    const names: Record<string, string> = {
-      'repair': 'Ремонт автомобиля',
-      'clean': 'Очистка автомобиля',
-      'lights_toggle': 'Переключить фары',
-      'indicators_left': 'Левый поворотник',
-      'indicators_right': 'Правый поворотник',
-      'indicators_hazard': 'Аварийка',
-      'indicators_off': 'Выключить поворотники',
-      'engine_toggle': 'Переключить двигатель',
-      'horn': 'Сигнал',
-      'siren_toggle': 'Сирена',
-      'doors_all_open': 'Открыть все двери',
-      'doors_all_close': 'Закрыть все двери',
-      'door_front_left': 'Передняя левая дверь',
-      'door_front_right': 'Передняя правая дверь',
-      'door_rear_left': 'Задняя левая дверь',
-      'door_rear_right': 'Задняя правая дверь',
-      'door_hood': 'Капот',
-      'door_trunk': 'Багажник',
-      'speedometer_toggle': 'Спидометр'
-    }
-    return names[action] || action
+  
+  /**
+   * Переключить избранное
+   */
+  const handleToggleFavorite = async (actionId: string) => {
+    await toggle('vehicleAction', actionId)
   }
-
-  const actionGroups = [
-    {
-      title: 'Ремонт и обслуживание',
-      icon: <Wrench className="w-4 h-4" />,
-      actions: [
-        { id: 'repair', label: 'Починить', icon: <Wrench className="w-4 h-4" />, color: 'text-green-400' },
-        { id: 'clean', label: 'Отчистить', icon: <Sparkles className="w-4 h-4" />, color: 'text-cyan-400' }
-      ]
-    },
-    {
-      title: 'Освещение',
-      icon: <Lightbulb className="w-4 h-4" />,
-      actions: [
-        { id: 'lights_toggle', label: 'Фары ВКЛ/ВЫКЛ', icon: <Lightbulb className="w-4 h-4" />, color: 'text-yellow-400' }
-      ]
-    },
-    {
-      title: 'Поворотники',
-      icon: <ArrowLeft className="w-4 h-4" />,
-      actions: [
-        { id: 'indicators_left', label: 'Левый', icon: <ArrowLeft className="w-4 h-4" />, color: 'text-orange-400' },
-        { id: 'indicators_right', label: 'Правый', icon: <ArrowRight className="w-4 h-4" />, color: 'text-orange-400' },
-        { id: 'indicators_hazard', label: 'Аварийка', icon: <Shield className="w-4 h-4" />, color: 'text-red-400' },
-        { id: 'indicators_off', label: 'Выключить', icon: <Shield className="w-4 h-4" />, color: 'text-gray-400' }
-      ]
-    },
-    {
-      title: 'Двигатель',
-      icon: <Car className="w-4 h-4" />,
-      actions: [
-        { id: 'engine_toggle', label: 'Завести/Заглушить', icon: <Zap className="w-4 h-4" />, color: 'text-green-400' }
-      ]
-    },
-    {
-      title: 'Звук',
-      icon: <Radio className="w-4 h-4" />,
-      actions: [
-        { id: 'horn', label: 'Сигнал', icon: <Radio className="w-4 h-4" />, color: 'text-purple-400' },
-        { id: 'siren_toggle', label: 'Сирена ВКЛ/ВЫКЛ', icon: <Wind className="w-4 h-4" />, color: 'text-blue-400' }
-      ]
-    },
-    {
-      title: 'Двери и капот',
-      icon: <DoorOpen className="w-4 h-4" />,
-      actions: [
-        { id: 'doors_all_open', label: 'Все двери', icon: <Unlock className="w-4 h-4" />, color: 'text-green-400' },
-        { id: 'doors_all_close', label: 'Закрыть все', icon: <Lock className="w-4 h-4" />, color: 'text-red-400' },
-        { id: 'door_front_left', label: 'Передняя левая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
-        { id: 'door_front_right', label: 'Передняя правая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
-        { id: 'door_rear_left', label: 'Задняя левая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
-        { id: 'door_rear_right', label: 'Задняя правая', icon: <DoorOpen className="w-4 h-4" />, color: 'text-blue-400' },
-        { id: 'door_hood', label: 'Капот', icon: <CarIcon className="w-4 h-4" />, color: 'text-yellow-400' },
-        { id: 'door_trunk', label: 'Багажник', icon: <CarIcon className="w-4 h-4" />, color: 'text-orange-400' }
-      ]
-    },
-    {
-      title: 'Интерфейс',
-      icon: <Gauge className="w-4 h-4" />,
-      actions: [
-        { id: 'speedometer_toggle', label: 'Спидометр', icon: <Gauge className="w-4 h-4" />, color: 'text-cyan-400' }
-      ]
-    },
-    {
-      title: 'Тестирование',
-      icon: <MapPin className="w-4 h-4" />,
-      actions: [
-        { id: 'teleport_to_location', label: 'Телепорт на трассу', icon: <MapPinned className="w-4 h-4" />, color: 'text-green-400' },
-        { id: 'yft_viewer', label: 'YFT Viewer (3D)', icon: <Box className="w-4 h-4" />, color: 'text-cyan-400' }
-      ]
-    }
-  ]
 
   return (
     <div className="h-full overflow-y-auto">
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm font-semibold text-white">Действия с автомобилем</div>
         {onFocusModeToggle && (
@@ -283,62 +174,40 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
         )}
       </div>
       
+      {/* Группы действий */}
       <div className="space-y-4">
-        {actionGroups.map((group, groupIndex) => (
+        {VEHICLE_ACTION_GROUPS.map((group, groupIndex) => (
           <div key={groupIndex} className="space-y-2">
             <div className="flex items-center space-x-2 text-xs font-medium text-gray-400">
-              {group.icon}
+              <group.icon className="w-4 h-4" />
               <span>{group.title}</span>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {group.actions.map((action) => {
-                const isFavorite = favorites.includes(action.id)
+              {group.actions.map((actionId) => {
+                const action = VEHICLE_ACTION_CONFIGS.find(a => a.id === actionId)
+                if (!action) return null
+                
+                const isFavorite = has('vehicleAction', actionId)
+                const isActive = actionId === 'speedometer_toggle' ? speedometerEnabled : false
+                
                 return (
-                  <div key={action.id} className="relative group/action-btn">
-                    <button
-                      onClick={() => handleAction(action.id)}
-                      disabled={disabled}
-                      className={`
-                        w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium
-                        transition-all duration-200 border
-                        ${disabled 
-                          ? 'bg-gray-800/50 border-gray-700 text-gray-500 cursor-not-allowed' 
-                          : 'bg-base-800/50 border-base-600 hover:bg-base-700 hover:border-base-500 text-white hover:scale-[1.02]'
-                        }
-                      `}
-                    >
-                      <div className={`${action.color} ${disabled ? 'opacity-50' : ''}`}>
-                        {action.icon}
-                      </div>
-                      <span className="truncate flex-1 text-left">{action.label}</span>
-                    </button>
-                    
-                    {/* Звездочка избранного */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleFavorite(action.id)
-                      }}
-                      className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center rounded-full bg-base-900 border border-base-600 opacity-0 group-hover/action-btn:opacity-100 hover:scale-110 transition-all duration-200 z-10"
-                      title={isFavorite ? 'Удалить из избранного' : 'Добавить в избранное'}
-                    >
-                      <Star 
-                        className={`w-3 h-3 transition-colors ${
-                          isFavorite 
-                            ? 'fill-yellow-400 text-yellow-400' 
-                            : 'text-gray-400 hover:text-yellow-400'
-                        }`}
-                      />
-                    </button>
-                  </div>
+                  <FavoriteActionButton
+                    key={actionId}
+                    action={action}
+                    isFavorite={isFavorite}
+                    isActive={isActive}
+                    disabled={disabled}
+                    onExecute={handleAction}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
                 )
               })}
             </div>
           </div>
         ))}
         
-        {/* Блок тюнинга как складной раздел */}
+        {/* Блок тюнинга */}
         <div className="space-y-2 mt-4 pt-4 border-t border-base-700">
           <button
             onClick={() => setShowTuning(!showTuning)}
@@ -360,7 +229,6 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
             )}
           </button>
 
-          {/* Содержимое тюнинга */}
           {showTuning && !disabled && (
             <div className="animate-slide-in-left">
               <VehicleTuning disabled={disabled} vehicleName={vehicleName} />
@@ -368,7 +236,7 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
           )}
         </div>
 
-        {/* Блок Speed Test как складной раздел */}
+        {/* Блок Speed Test */}
         <div className="space-y-2 mt-4 pt-4 border-t border-base-700">
           <button
             onClick={() => setShowSpeedTest(!showSpeedTest)}
@@ -390,7 +258,6 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
             )}
           </button>
 
-          {/* Содержимое Speed Test */}
           {showSpeedTest && !disabled && (
             <div className="animate-slide-in-left">
               <SpeedTestPanel />
@@ -399,6 +266,7 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
         </div>
       </div>
       
+      {/* Предупреждение */}
       {disabled && (
         <div className="mt-4 p-3 bg-orange-900/20 border border-orange-500/30 rounded-lg">
           <div className="flex items-center space-x-2 text-xs text-orange-300">
@@ -412,7 +280,3 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
 }
 
 export default VehicleActions
-
-
-
-

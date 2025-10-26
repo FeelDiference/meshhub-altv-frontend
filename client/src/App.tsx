@@ -13,6 +13,13 @@ import CharacterPage from '@/components/character/CharacterPage'
 import { Dashboard, LoginPage, VehiclesPage, WeaponsPage } from '@/pages'
 import type { MenuItem } from '@/types/menu'
 import { loader } from '@monaco-editor/react'
+import { 
+  isMigrationCompleted, 
+  migrateLegacyFavorites, 
+  markMigrationCompleted,
+  getLegacyDataStats
+} from '@/utils/favoritesMigration'
+import { favoritesService } from '@/services/favoritesService'
 
 
 function App() {
@@ -20,6 +27,50 @@ function App() {
   const [currentPage, setCurrentPage] = useState('dashboard')
   const [yftGameViewActive, setYftGameViewActive] = useState(false) // Game View mode from YFT Viewer
   const [focusMode, setFocusMode] = useState<string>('off') // Состояние для focusMode
+  
+  // Миграция избранного (один раз при первой загрузке)
+  useEffect(() => {
+    const runMigration = async () => {
+      if (isMigrationCompleted()) {
+        console.log('[App] 🔄 Migration already completed, skipping...')
+        return
+      }
+      
+      console.log('[App] 🔄 Running favorites migration...')
+      
+      // Получаем статистику старых данных
+      const legacyStats = getLegacyDataStats()
+      console.log('[App] 📊 Legacy data stats:', legacyStats)
+      
+      // Выполняем миграцию
+      const migratedData = await migrateLegacyFavorites()
+      
+      if (migratedData) {
+        console.log('[App] ✅ Migration successful, saving to new storage...')
+        
+        // Сохраняем в новый сервис
+        // Данные уже будут загружены через init() в favoritesService
+        await favoritesService.sync()
+        
+        // Помечаем миграцию как выполненную
+        markMigrationCompleted()
+        
+        // Очищаем старые ключи (опционально, можно оставить для fallback)
+        // cleanupLegacyStorage()
+        
+        console.log('[App] 🎉 Migration completed successfully!')
+      } else {
+        console.log('[App] ℹ️ No legacy data to migrate')
+        markMigrationCompleted()
+      }
+    }
+    
+    runMigration().catch(err => {
+      console.error('[App] ❌ Migration failed:', err)
+      // Помечаем миграцию как выполненную чтобы не запускать снова
+      markMigrationCompleted()
+    })
+  }, [])
   
   // Предзагрузка Monaco Editor для быстрого открытия редакторов XML
   useEffect(() => {

@@ -2,23 +2,23 @@ import { useState, useEffect } from 'react'
 import { MapPin, Navigation, Star, Edit2, Check, X, Trash2, Send, Eye, EyeOff, Target } from 'lucide-react'
 import { TeleportMarker, Vec3 } from '../../types/world'
 import { parseCoordinates, formatCoordinates, isValidGTACoordinates } from '@/utils/parseCoordinates'
+import { useFavorites } from '@/hooks/useFavorites'
 import toast from 'react-hot-toast'
 
 interface TeleportMarkersProps {
-  onToggleFavorite: (markerId: string) => void
-  isFavorite: (markerId: string) => boolean
+  // Убрали props - теперь используем централизованный хук
 }
 
-const TeleportMarkers: React.FC<TeleportMarkersProps> = ({ 
-  onToggleFavorite, 
-  isFavorite
-}) => {
+const TeleportMarkers: React.FC<TeleportMarkersProps> = () => {
   const [currentPosition, setCurrentPosition] = useState<Vec3>({ x: 0, y: 0, z: 0 })
   const [markers, setMarkers] = useState<TeleportMarker[]>([])
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
-  const [coordsInput, setCoordsInput] = useState('') // Для inline редактирования координат
-  const [viewerEnabled, setViewerEnabled] = useState(false) // Состояние viewer от Alt:V
+  const [coordsInput, setCoordsInput] = useState('')
+  const [viewerEnabled, setViewerEnabled] = useState(false)
+  
+  // Используем централизованный хук избранного
+  const { toggle, has } = useFavorites()
 
   // Загружаем маркеры при монтировании
   useEffect(() => {
@@ -407,8 +407,8 @@ const TeleportMarkers: React.FC<TeleportMarkersProps> = ({
           </div>
         ) : (
           markers.map((marker) => {
-            const isFav = isFavorite(marker.id)
             const isEditing = editingMarkerId === marker.id
+            const isFav = has('teleportMarker', marker.id)
             
             return (
               <div key={marker.id} className="flex items-center justify-between">
@@ -454,9 +454,11 @@ const TeleportMarkers: React.FC<TeleportMarkersProps> = ({
                   )}
                 </button>
                 
-                {/* Кнопка избранного - в стиле погоды */}
+                {/* Кнопка избранного */}
                 <button
-                  onClick={() => onToggleFavorite(marker.id)}
+                  onClick={async () => {
+                    await toggle('teleportMarker', marker.id)
+                  }}
                   className={`ml-2 p-2 rounded-lg transition-colors ${
                     isFav 
                       ? 'text-yellow-400 hover:text-yellow-300' 
