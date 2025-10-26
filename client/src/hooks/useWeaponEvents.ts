@@ -52,3 +52,4 @@ export function useWeaponEvents(options: UseWeaponEventsOptions) {
   }, [onWeaponEquipped, onWeaponUnequipped])
 }
 
+

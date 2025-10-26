@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react'
+/**
+ * Weapon Meta Editor - Monaco Editor для редактирования weapons.meta XML
+ */
+
+import React, { useState } from 'react'
 import { Copy, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
+import MonacoXMLEditor from '../common/MonacoXMLEditor'
 
 interface WeaponMetaEditorProps {
   xml: string
@@ -9,17 +14,12 @@ interface WeaponMetaEditorProps {
   focusMode?: boolean
 }
 
-const WeaponMetaEditor: React.FC<WeaponMetaEditorProps> = ({ xml }) => {
-  const [editedXml, setEditedXml] = useState(xml)
+const WeaponMetaEditor: React.FC<WeaponMetaEditorProps> = ({ xml, onXmlChange }) => {
   const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    setEditedXml(xml)
-  }, [xml])
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(editedXml)
+      await navigator.clipboard.writeText(xml)
       setCopied(true)
       toast.success('XML скопирован в буфер обмена')
       setTimeout(() => setCopied(false), 2000)
@@ -28,26 +28,6 @@ const WeaponMetaEditor: React.FC<WeaponMetaEditorProps> = ({ xml }) => {
       toast.error('Не удалось скопировать XML')
     }
   }
-
-  // Format XML for better readability
-  const formattedXml = editedXml
-    .split('\n')
-    .map((line, index) => {
-      const trimmed = line.trim()
-      if (!trimmed) return null
-      
-      return (
-        <div key={index} className="flex">
-          <div className="w-12 flex-shrink-0 text-right pr-4 text-gray-600 select-none">
-            {index + 1}
-          </div>
-          <div className="flex-1 text-gray-300 font-mono text-xs whitespace-pre">
-            {line}
-          </div>
-        </div>
-      )
-    })
-    .filter(Boolean)
 
   return (
     <div className="flex flex-col h-full">
@@ -71,34 +51,35 @@ const WeaponMetaEditor: React.FC<WeaponMetaEditorProps> = ({ xml }) => {
               </>
             )}
           </button>
-          
         </div>
       </div>
 
-      {/* XML viewer */}
+      {/* Monaco XML Editor */}
       <div className="flex-1 overflow-hidden rounded-lg border border-base-700 bg-base-950">
-        <div className="h-full overflow-y-auto p-4">
-          {xml && xml.trim() ? (
-            formattedXml
-          ) : (
-            <div className="flex items-center justify-center h-full text-center">
-              <div>
-                <div className="text-lg font-semibold text-gray-400 mb-2">
-                  Meta данные не найдены
-                </div>
-                <div className="text-sm text-gray-500">
-                  Для этого оружия отсутствует XML конфигурация
-                </div>
+        {xml && xml.trim() ? (
+          <MonacoXMLEditor 
+            value={xml}
+            onChange={(newXml) => onXmlChange?.(newXml)}
+            height="100%"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-center">
+            <div>
+              <div className="text-lg font-semibold text-gray-400 mb-2">
+                Meta данные не найдены
+              </div>
+              <div className="text-sm text-gray-500">
+                Для этого оружия отсутствует XML конфигурация
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Info */}
       <div className="mt-3 p-3 bg-base-800 rounded-lg border border-base-700">
         <div className="text-xs text-gray-400">
-          💡 XML обновляется автоматически при изменении параметров на ползунках
+          💡 Monaco Editor: Tab для отступов, Ctrl+F для поиска, Ctrl+Shift+F для форматирования
         </div>
       </div>
     </div>

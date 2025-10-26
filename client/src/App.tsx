@@ -12,6 +12,7 @@ import WorldPage from '@/components/world/WorldPage'
 import CharacterPage from '@/components/character/CharacterPage'
 import { Dashboard, LoginPage, VehiclesPage, WeaponsPage } from '@/pages'
 import type { MenuItem } from '@/types/menu'
+import { loader } from '@monaco-editor/react'
 
 
 function App() {
@@ -19,6 +20,16 @@ function App() {
   const [currentPage, setCurrentPage] = useState('dashboard')
   const [yftGameViewActive, setYftGameViewActive] = useState(false) // Game View mode from YFT Viewer
   const [focusMode, setFocusMode] = useState<string>('off') // Состояние для focusMode
+  
+  // Предзагрузка Monaco Editor для быстрого открытия редакторов XML
+  useEffect(() => {
+    console.log('[App] 🚀 Preloading Monaco Editor...')
+    loader.init().then(() => {
+      console.log('[App] ✅ Monaco Editor preloaded successfully')
+    }).catch(err => {
+      console.error('[App] ❌ Monaco preload failed:', err)
+    })
+  }, [])
   
   // Импортируем и используем online status hook (будет добавлен import выше)
   // Автоматически отправляет heartbeat каждую минуту если пользователь авторизован

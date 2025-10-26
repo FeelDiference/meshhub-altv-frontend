@@ -12,6 +12,7 @@
     "build-resource": "./scripts/build-resource.sh"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@react-three/drei": "^9.88.0",
     "@react-three/fiber": "^8.15.0",
     "axios": "^1.6.0",

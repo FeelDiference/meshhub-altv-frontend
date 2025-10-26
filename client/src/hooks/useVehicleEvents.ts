@@ -166,3 +166,4 @@ export function useVehicleEvents(options: UseVehicleEventsOptions) {
   }, [onLocalEditsUpdate, onPanelOpened])
 }
 
+
