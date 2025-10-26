@@ -82,7 +82,11 @@ export async function getVehicles(): Promise<VehicleResource[]> {
     
   } catch (error: any) {
     console.error('❌ Ошибка загрузки автомобилей:', error)
-    throw new Error(`Не удалось загрузить список автомобилей: ${error.message}`)
+    // Улучшенное сообщение об ошибке для пользователя
+    if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      throw new Error('Сервис временно недоступен')
+    }
+    throw new Error(`Сервис временно недоступен: ${error.message}`)
   }
 }
 
@@ -100,7 +104,10 @@ export async function getVehicleMetadata(vehicleId: string) {
     
   } catch (error: any) {
     console.error('❌ Ошибка загрузки метаданных:', error)
-    throw new Error(`Не удалось загрузить метаданные: ${error.message}`)
+    if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      throw new Error('Сервис временно недоступен')
+    }
+    throw new Error(`Сервис временно недоступен: ${error.message}`)
   }
 }
 

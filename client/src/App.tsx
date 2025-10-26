@@ -12,6 +12,7 @@ import { fetchHandlingMeta } from '@/services/rpf'
 import { updateXmlNumericValue, paramToXmlTag } from '@/utils/updateXml'
 import { useAuth } from '@/hooks/useAuth'
 import { useALTV } from '@/hooks/useALTV'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { Button } from '@/components/common/Button'
 import { getVehicles } from '@/services/vehicles'
 import type { VehicleResource } from '@/types/vehicle'
@@ -892,6 +893,9 @@ const VehiclesPage = () => {
   // Local машины пользователя
   const [localVehicles, setLocalVehicles] = useState<AnyVehicle[]>([])
   
+  // Флаг для отслеживания первой автоматической проверки автомобиля при открытии вкладки
+  const [initialVehicleCheckDone, setInitialVehicleCheckDone] = useState(false)
+  
   // Функция загрузки локальных машин
   const loadLocalVehicles = useCallback(async () => {
     if (activeTab !== 'local') return
@@ -1110,8 +1114,114 @@ const VehiclesPage = () => {
   const [vehicleStatuses, setVehicleStatuses] = useState<Map<string, VehicleStatus>>(new Map())
   const [pendingRestartIds, setPendingRestartIds] = useState<Set<string>>(new Set())
 
+  // Автоматическая проверка и переключение вкладки при открытии страницы, если игрок в машине
+  useEffect(() => {
+    // Проверяем только один раз при монтировании или когда данные загрузились
+    if (initialVehicleCheckDone) return
+    if (!currentVehicle || !currentVehicle.modelName) return
+    
+    // Ждем пока загрузятся списки (хотя бы GTAV должен быть)
+    if (gtavVehicles.length === 0) return
+    
+    console.log('[VehiclesPage] 🔍 Initial check - player is in vehicle:', currentVehicle.modelName)
+    
+    // Ищем машину в GTAV списке
+    const gtavVehicle = gtavVehicles.find(v => v.name.toLowerCase() === currentVehicle.modelName.toLowerCase())
+    
+    if (gtavVehicle) {
+      // Это ванильная GTA V машина
+      console.log('[VehiclesPage] ✅ Player is in GTAV vehicle, switching to GTAV tab')
+      setActiveTab('gtav')
+      
+      // Автоматически выбираем машину
+      const vehicleData = {
+        ...gtavVehicle,
+        id: gtavVehicle.name,
+        modelName: gtavVehicle.name,
+        isGTAV: true as const
+      }
+      setSelectedVehicle(vehicleData)
+      setShowTuning(true)
+      setShowMeta(true)
+      setShowActions(true)
+      setPanelsVisible(true)
+      
+      console.log('[VehiclesPage] 🎯 GTAV vehicle auto-selected:', gtavVehicle.name)
+      setInitialVehicleCheckDone(true)
+    } else {
+      // Ищем в кастомных (HUB или LOCAL)
+      const customVehicle = vehicles.find(v => v.name.toLowerCase() === currentVehicle.modelName.toLowerCase())
+      
+      if (customVehicle) {
+        // Это кастомная машина из HUB
+        console.log('[VehiclesPage] ✅ Player is in HUB vehicle, switching to HUB tab')
+        setActiveTab('hub')
+        setSelectedVehicle(customVehicle)
+        setShowTuning(true)
+        setShowMeta(true)
+        setShowActions(true)
+        setPanelsVisible(true)
+        
+        console.log('[VehiclesPage] 🎯 HUB vehicle auto-selected:', customVehicle.name)
+        setInitialVehicleCheckDone(true)
+      } else {
+        // Ищем в LOCAL машинах
+        const localVehicle = localVehicles.find(v => v.name.toLowerCase() === currentVehicle.modelName.toLowerCase())
+        
+        if (localVehicle) {
+          // Это локальная машина
+          console.log('[VehiclesPage] ✅ Player is in LOCAL vehicle, switching to LOCAL tab')
+          setActiveTab('local')
+          setSelectedVehicle(localVehicle)
+          setShowTuning(true)
+          setShowMeta(true)
+          setShowActions(true)
+          setPanelsVisible(true)
+          
+          console.log('[VehiclesPage] 🎯 LOCAL vehicle auto-selected:', localVehicle.name)
+          setInitialVehicleCheckDone(true)
+        } else {
+          // Машина не найдена ни в одном списке
+          console.log('[VehiclesPage] ⚠️ Player is in unknown vehicle:', currentVehicle.modelName)
+          // Создаем временный объект для неизвестной машины
+          const unknownVehicle = {
+            id: `unknown_${currentVehicle.modelName}`,
+            name: currentVehicle.modelName,
+            displayName: currentVehicle.modelName,
+            modelName: currentVehicle.modelName,
+            category: 'local',
+            tags: [],
+            size: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            metadata: null,
+            isLocal: true
+          }
+          
+          setActiveTab('local')
+          setSelectedVehicle(unknownVehicle)
+          setShowTuning(true)
+          setShowMeta(true)
+          setShowActions(true)
+          setPanelsVisible(true)
+          
+          console.log('[VehiclesPage] 🎯 Unknown vehicle auto-selected:', currentVehicle.modelName)
+          setInitialVehicleCheckDone(true)
+        }
+      }
+    }
+  }, [currentVehicle, gtavVehicles, vehicles, localVehicles, initialVehicleCheckDone]) // Запускаем при изменении данных
+
   // Загружаем автомобили с backend
   useEffect(() => {
+    // Загружаем HUB данные только когда пользователь на вкладке HUB
+    // GTAV и LOCAL вкладки работают автономно без backend
+    if (activeTab !== 'hub') {
+      setLoading(false)
+      setError(null)
+      return
+    }
+    
     const loadVehicles = async () => {
       try {
         setLoading(true)
@@ -1167,16 +1277,16 @@ const VehiclesPage = () => {
         }
         
       } catch (err: any) {
-        setError(err.message)
+        setError('Сервис временно недоступен. GTAV и LOCAL вкладки работают автономно.')
         console.error('Ошибка загрузки автомобилей:', err)
-        toast.error('Не удалось загрузить список автомобилей')
+        toast.error('Сервис временно недоступен')
       } finally {
         setLoading(false)
       }
     }
     
     loadVehicles()
-  }, [gtavVehicles])
+  }, [gtavVehicles, activeTab])
 
   // Дожимаем выбор машины, если событие пришло раньше, чем загрузился список
   useEffect(() => {
@@ -2117,6 +2227,14 @@ const WeaponsPage = () => {
 
   // Load weapons from backend
   useEffect(() => {
+    // Загружаем HUB данные только когда пользователь на вкладке HUB
+    // GTAV и LOCAL вкладки работают автономно без backend
+    if (activeTab !== 'hub') {
+      setLoading(false)
+      setError(null)
+      return
+    }
+    
     (async () => {
       try {
         setLoading(true)
@@ -2139,13 +2257,14 @@ const WeaponsPage = () => {
         }
         setWeaponStatuses(statuses)
       } catch (err: any) {
-        setError(err.message)
+        setError('Сервис временно недоступен. GTAV и LOCAL вкладки работают автономно.')
         console.error('Ошибка загрузки оружия:', err)
+        toast.error('Сервис временно недоступен')
       } finally {
         setLoading(false)
       }
     })()
-  }, [])
+  }, [activeTab])
   
   // Обработчик получения оружия в руки (аналог onPlayerEnteredVehicle для автомобилей)
   useEffect(() => {
@@ -2843,6 +2962,10 @@ function App() {
   const [currentPage, setCurrentPage] = useState('dashboard')
   const [yftGameViewActive, setYftGameViewActive] = useState(false) // Game View mode from YFT Viewer
   const [focusMode, setFocusMode] = useState<string>('off') // Состояние для focusMode
+  
+  // Импортируем и используем online status hook (будет добавлен import выше)
+  // Автоматически отправляет heartbeat каждую минуту если пользователь авторизован
+  useOnlineStatus()
   
   // Устанавливаем глобальный флаг для доступа из Dashboard
   useEffect(() => {

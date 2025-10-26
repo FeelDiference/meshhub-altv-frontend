@@ -20,7 +20,6 @@ import {
   ChevronRight,
   Home,
   Cloud,
-  Gamepad2,
   HardDrive,
   Star
 } from 'lucide-react'
@@ -39,7 +38,7 @@ export function InteriorsPage() {
   useEffect(() => {
     loadInteriors()
     loadFavorites()
-  }, [])
+  }, [activeTab])
 
   const loadFavorites = () => {
     try {
@@ -98,6 +97,14 @@ export function InteriorsPage() {
   }
 
   const loadInteriors = async () => {
+    // Загружаем HUB данные только когда пользователь на вкладке HUB
+    // LOCAL вкладка работает автономно без backend
+    if (activeTab !== 'hub') {
+      setLoading(false)
+      setError(null)
+      return
+    }
+    
     try {
       setLoading(true)
       setError(null)
@@ -120,8 +127,9 @@ export function InteriorsPage() {
       }
       setInteriorStatuses(statuses)
     } catch (err: any) {
-      setError(err.message)
+      setError('Сервис временно недоступен. LOCAL вкладка работает автономно.')
       console.error('Ошибка загрузки интерьеров:', err)
+      toast.error('Сервис временно недоступен')
     } finally {
       setLoading(false)
     }
@@ -210,8 +218,8 @@ export function InteriorsPage() {
         </div>
       </div>
 
-      {/* Tabs - точно такой же дизайн как в VehiclesPage и WeaponsPage */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      {/* Tabs - HUB (активная), LOCAL (будущее) - кнопка GTAV убрана */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
         <button
           className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
             activeTab === 'hub' 
@@ -226,13 +234,7 @@ export function InteriorsPage() {
         <button
           disabled
           className="w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 bg-base-800/30 text-gray-600 border border-base-700/20 cursor-not-allowed opacity-50"
-        >
-          <Gamepad2 className="w-4 h-4" />
-          <span>GTAV</span>
-        </button>
-        <button
-          disabled
-          className="w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 bg-base-800/30 text-gray-600 border border-base-700/20 cursor-not-allowed opacity-50"
+          title="Локальные интерьеры - функция в разработке"
         >
           <HardDrive className="w-4 h-4" />
           <span>Local</span>

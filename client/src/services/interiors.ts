@@ -42,7 +42,10 @@ export async function getInteriors(): Promise<InteriorResource[]> {
     return interiors
   } catch (error: any) {
     console.error('❌ Ошибка загрузки интерьеров:', error)
-    throw new Error(`Не удалось загрузить список интерьеров: ${error.message}`)
+    if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      throw new Error('Сервис временно недоступен')
+    }
+    throw new Error(`Сервис временно недоступен: ${error.message}`)
   }
 }
 
@@ -58,7 +61,10 @@ export async function getInteriorDetails(archiveId: string): Promise<InteriorDet
     return response.data
   } catch (error: any) {
     console.error('❌ Ошибка загрузки деталей интерьера:', error)
-    throw new Error(`Не удалось загрузить детали интерьера: ${error.message}`)
+    if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      throw new Error('Сервис временно недоступен')
+    }
+    throw new Error(`Сервис временно недоступен: ${error.message}`)
   }
 }
 

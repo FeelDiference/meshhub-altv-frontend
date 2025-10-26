@@ -67,7 +67,10 @@ export async function getWeaponArchives(): Promise<WeaponResource[]> {
     
   } catch (error: any) {
     console.error('❌ Ошибка загрузки оружия:', error)
-    throw new Error(`Не удалось загрузить список оружия: ${error.message}`)
+    if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      throw new Error('Сервис временно недоступен')
+    }
+    throw new Error(`Сервис временно недоступен: ${error.message}`)
   }
 }
 
@@ -132,7 +135,10 @@ export async function getWeaponsInArchive(archiveId: string): Promise<WeaponReso
     
   } catch (error: any) {
     console.error('❌ Ошибка загрузки оружий из архива:', error)
-    throw new Error(`Не удалось загрузить оружия из архива: ${error.message}`)
+    if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      throw new Error('Сервис временно недоступен')
+    }
+    throw new Error(`Сервис временно недоступен: ${error.message}`)
   }
 }
 
