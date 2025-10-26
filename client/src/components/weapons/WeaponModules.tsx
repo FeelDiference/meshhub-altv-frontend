@@ -243,7 +243,7 @@ const WeaponModules: React.FC<WeaponModulesProps> = ({ disabled = false, weaponN
             ({availableCategories.length} доступно)
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {availableCategories.length > 0 ? (
             availableCategories.map((categoryId) => {
               const category = WEAPON_MODULE_CATEGORIES.find(c => c.id === categoryId)

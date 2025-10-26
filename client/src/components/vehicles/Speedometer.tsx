@@ -42,9 +42,9 @@ export const Speedometer: React.FC<SpeedometerProps> = ({ isVisible, onToggle })
   const needleAngle = minAngle + (angleRange * speedRatio)
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 pointer-events-auto">
-      {/* Спидометр */}
-      <div className="relative w-48 h-48 bg-black/20 rounded-full border-2 border-white/20">
+    <div className="fixed bottom-2 sm:bottom-4 right-2 sm:right-4 z-50 pointer-events-auto">
+      {/* Спидометр - адаптивный размер */}
+      <div className="relative w-32 sm:w-40 lg:w-48 h-32 sm:h-40 lg:h-48 bg-black/20 rounded-full border-2 border-white/20">
         {/* Фон спидометра */}
         <img 
           src="http://resource/client/speedometer.png" 
@@ -74,18 +74,18 @@ export const Speedometer: React.FC<SpeedometerProps> = ({ isVisible, onToggle })
         />
         
         {/* Текст скорости */}
-        <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2">
-          <div className="bg-black/80 px-3 py-2 rounded-lg text-white text-lg font-bold text-center border border-white/20">
+        <div className="absolute bottom-8 sm:bottom-10 lg:bottom-12 left-1/2 transform -translate-x-1/2">
+          <div className="bg-black/80 px-2 sm:px-3 py-1 sm:py-2 rounded-lg text-white text-base sm:text-lg font-bold text-center border border-white/20">
             {speed}
-            <div className="text-sm text-gray-300">км/ч</div>
+            <div className="text-xs sm:text-sm text-gray-300">км/ч</div>
           </div>
         </div>
         
         {/* Fallback если изображения не загрузились */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-white text-center">
-            <div className="text-2xl font-bold">{speed}</div>
-            <div className="text-sm">км/ч</div>
+            <div className="text-lg sm:text-xl lg:text-2xl font-bold">{speed}</div>
+            <div className="text-xs sm:text-sm">км/ч</div>
           </div>
         </div>
       </div>

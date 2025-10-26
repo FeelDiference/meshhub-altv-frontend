@@ -317,7 +317,7 @@ const SpeedTestPanel = () => {
               <Zap className="w-4 h-4 text-yellow-400" />
               <span className="text-sm font-medium text-white">Разгон:</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-400">0-100:</span>
                 <span className="text-white">{formatTimeShort(latestResult.acceleration['0-100'])}</span>

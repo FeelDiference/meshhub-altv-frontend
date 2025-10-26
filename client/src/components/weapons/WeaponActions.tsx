@@ -57,9 +57,10 @@ const WeaponActions: React.FC<WeaponActionsProps> = ({ disabled = false, weaponN
   
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
-      (window as any).__focusMode = focusMode ? 'off' : 'actions'
+      const newMode = focusMode ? 'off' : 'actions'
+      ;(window as any).__focusMode = newMode
       // Диспатчим событие для перерисовки App
-      window.dispatchEvent(new Event('focusModeChanged'))
+      window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: newMode } }))
       onFocusModeToggle()
     }
   }

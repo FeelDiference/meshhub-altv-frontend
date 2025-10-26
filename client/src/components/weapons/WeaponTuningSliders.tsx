@@ -134,8 +134,9 @@ const WeaponTuningSliders: React.FC<WeaponTuningSlidersProps> = ({
 
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
-      (window as any).__focusMode = focusMode ? 'off' : 'weapon'
-      window.dispatchEvent(new Event('focusModeChanged'))
+      const newMode = focusMode ? 'off' : 'weapon'
+      ;(window as any).__focusMode = newMode
+      window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: newMode } }))
       onFocusModeToggle()
     }
   }
@@ -338,8 +339,8 @@ const WeaponTuningSliders: React.FC<WeaponTuningSlidersProps> = ({
         </div>
       </div>
 
-      {/* Сетка слайдеров */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Сетка слайдеров - адаптивная */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {WEAPON_SLIDERS.map(slider => {
           const value = values[slider.key] ?? slider.min
 

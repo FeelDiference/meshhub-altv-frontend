@@ -183,8 +183,9 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
 
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
-      (window as any).__focusMode = focusMode ? 'off' : 'tuning'
-      window.dispatchEvent(new Event('focusModeChanged'))
+      const newMode = focusMode ? 'off' : 'tuning'
+      ;(window as any).__focusMode = newMode
+      window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: newMode } }))
       onFocusModeToggle()
     }
   }
@@ -638,8 +639,8 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           />
         )}
 
-      {/* Сетка слайдеров */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Сетка слайдеров - адаптивная */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {SLIDERS.map(s => {
           const isUnsupported = unsupportedParams.includes(s.key)
           const isSupported = supportedParams.includes(s.key)

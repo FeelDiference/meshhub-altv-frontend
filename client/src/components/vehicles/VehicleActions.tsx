@@ -85,9 +85,10 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
   }
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
-      (window as any).__focusMode = focusMode ? 'off' : 'actions'
+      const newMode = focusMode ? 'off' : 'actions'
+      ;(window as any).__focusMode = newMode
       // Диспатчим событие для перерисовки App
-      window.dispatchEvent(new Event('focusModeChanged'))
+      window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: newMode } }))
       onFocusModeToggle()
     }
   }
@@ -290,7 +291,7 @@ const VehicleActions: React.FC<VehicleActionsProps> = ({ disabled = false, onAct
               <span>{group.title}</span>
             </div>
             
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {group.actions.map((action) => {
                 const isFavorite = favorites.includes(action.id)
                 return (

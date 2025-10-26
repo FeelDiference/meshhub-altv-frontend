@@ -205,10 +205,10 @@ export function InteriorsPage() {
   }
 
   return (
-    <div className="flex-1 p-6">
+    <div className="flex-1 p-4 sm:p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">Интерьеры (MLO)</h1>
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl lg:text-2xl font-bold text-white mb-2">Интерьеры (MLO)</h1>
         <div className="flex items-center space-x-2 text-sm mb-4">
           <div className={`px-2 py-1 rounded-full text-xs ${
             isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'
@@ -218,8 +218,8 @@ export function InteriorsPage() {
         </div>
       </div>
 
-      {/* Tabs - HUB (активная), LOCAL (будущее) - кнопка GTAV убрана */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      {/* Tabs - HUB (активная), LOCAL (будущее) - кнопка GTAV убрана - адаптивные */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
         <button
           className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
             activeTab === 'hub' 
@@ -261,7 +261,7 @@ export function InteriorsPage() {
 
       {/* Content */}
       {!loading && !error && (
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 gap-2 sm:gap-3 overflow-x-hidden">
           {interiors.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <Home className="w-12 h-12 mx-auto mb-3 text-gray-600" />
@@ -280,7 +280,7 @@ export function InteriorsPage() {
               return (
                 <div 
                   key={interior.id}
-                  className="p-4 bg-base-800 border border-base-700 rounded-lg hover:bg-base-700 transition-colors cursor-pointer"
+                  className="p-3 sm:p-4 bg-base-800 border border-base-700 rounded-lg hover:bg-base-700 transition-colors cursor-pointer"
                   onClick={() => toggleExpanded(interior.id)}
                 >
                   <div className="flex items-center justify-between">
@@ -453,7 +453,7 @@ export function InteriorsPage() {
 
       {/* Footer info */}
       {!loading && interiors.length > 0 && (
-        <div className="mt-6 p-4 bg-base-800 rounded-lg">
+        <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-base-800 rounded-lg">
           <div className="text-xs text-gray-400">
             {isAvailable 
               ? '🎮 Подключено к ALT:V - интерьеры будут установлены в игру' 

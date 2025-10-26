@@ -258,7 +258,7 @@ function App() {
         return null
       })()}
       <div 
-        className="flex-shrink-0 p-3 sm:p-4 border-b border-base-700"
+        className="flex-shrink-0 p-4 border-b border-base-700"
         style={{ 
           display: focusMode === 'game-view' ? 'none' : 'block',
           opacity: focusMode === 'game-view' ? 0 : 1,
@@ -271,8 +271,8 @@ function App() {
               <Settings className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base lg:text-lg font-semibold text-white">MeshHub</h1>
-              <p className="text-[10px] sm:text-xs text-gray-400">ALT:V Tools</p>
+              <h1 className="text-lg font-semibold text-white">MeshHub</h1>
+              <p className="text-xs text-gray-400">ALT:V Tools</p>
             </div>
           </div>
           
@@ -302,17 +302,17 @@ function App() {
         return null
       })()}
       <div 
-        className="flex-shrink-0 p-3 sm:p-4 border-b border-base-700"
+        className="flex-shrink-0 p-4 border-b border-base-700"
         style={{ 
           display: focusMode === 'game-view' ? 'none' : 'block',
           opacity: focusMode === 'game-view' ? 0 : 1,
           pointerEvents: focusMode === 'game-view' ? 'none' : 'auto'
         }}
       >
-        <div className="space-y-1 sm:space-y-2">
+        <div className="space-y-2">
           <button
             onClick={() => setCurrentPage('dashboard')}
-            className={`w-full flex items-center space-x-2 sm:space-x-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors ${
+            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
               currentPage === 'dashboard' 
                 ? 'bg-primary-600 text-white' 
                 : 'text-gray-400 hover:text-white hover:bg-base-800'
@@ -329,7 +329,7 @@ function App() {
                 key={item.id}
                 onClick={() => item.enabled && setCurrentPage(item.id)}
                 disabled={!item.enabled}
-                className={`w-full flex items-center space-x-2 sm:space-x-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors ${
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
                   currentPage === item.id 
                     ? 'bg-primary-600 text-white' 
                     : item.enabled 
@@ -337,8 +337,8 @@ function App() {
                       : 'text-gray-600 cursor-not-allowed'
                 }`}
               >
-                <Icon className="w-4 h-4 flex-shrink-0" />
-                <span className="text-xs sm:text-sm truncate">{item.label}</span>
+                <Icon className="w-4 h-4" />
+                <span className="text-sm">{item.label}</span>
                 {!item.enabled && (
                   <span className="ml-auto text-xs text-gray-500">Soon</span>
                 )}
@@ -350,7 +350,7 @@ function App() {
 
       {/* Content */}
       <div 
-        className="flex-1 overflow-y-auto overflow-x-hidden"
+        className="flex-1 overflow-y-auto"
         style={{ 
           display: focusMode === 'game-view' ? 'none' : 'block',
           opacity: focusMode === 'game-view' ? 0 : 1,
@@ -362,7 +362,7 @@ function App() {
 
       {/* Footer - скрываем в Game View режиме */}
       <div 
-        className="flex-shrink-0 p-3 sm:p-4 border-t border-base-700"
+        className="flex-shrink-0 p-4 border-t border-base-700"
         style={{ 
           display: focusMode === 'game-view' ? 'none' : 'block',
           opacity: focusMode === 'game-view' ? 0 : 1,

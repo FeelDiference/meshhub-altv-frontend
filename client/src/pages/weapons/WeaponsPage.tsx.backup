@@ -1,5 +1,5 @@
 // Страница управления оружием
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Zap, Loader2, AlertCircle, Download, RotateCcw, Search, X, Cloud, Gamepad2, HardDrive, ChevronDown, ChevronRight, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
 import WeaponActions from '@/components/weapons/WeaponActions'
@@ -97,7 +97,6 @@ export const WeaponsPage = () => {
   const [showWeaponMeta, setShowWeaponMeta] = useState(true)
   const [showWeaponActions, setShowWeaponActions] = useState(true)
   const [focusMode, setFocusMode] = useState<'off' | 'tuning' | 'meta' | 'actions'>('off')
-  const headerRef = React.useRef<HTMLDivElement>(null) // Ref для заголовка панелей
   
   // Синхронизируем focusMode с глобальной переменной для скрытия главного меню
   useEffect(() => {
@@ -105,39 +104,6 @@ export const WeaponsPage = () => {
       ;(window as any).__focusMode = focusMode
     }
   }, [focusMode])
-  
-  // Динамический расчет ширины заголовка на основе реальных панелей
-  useEffect(() => {
-    if (!headerRef.current || !panelsVisible) return
-    
-    const updateHeaderWidth = () => {
-      // Находим все видимые панели
-      const panels = document.querySelectorAll('[data-weapon-panel-type]')
-      if (panels.length === 0) return
-      
-      let totalWidth = 0
-      panels.forEach((panel) => {
-        totalWidth += panel.getBoundingClientRect().width
-      })
-      
-      // Добавляем отступы между панелями (12px каждый)
-      const gaps = (panels.length - 1) * 12
-      totalWidth += gaps
-      
-      if (headerRef.current) {
-        headerRef.current.style.width = `${totalWidth}px`
-      }
-    }
-    
-    // Обновляем при изменении видимости панелей
-    const timeout = setTimeout(updateHeaderWidth, 100)
-    window.addEventListener('resize', updateHeaderWidth)
-    
-    return () => {
-      clearTimeout(timeout)
-      window.removeEventListener('resize', updateHeaderWidth)
-    }
-  }, [panelsVisible, showWeaponTuning, showWeaponMeta, showWeaponActions, selectedWeapon])
   
   // Weapons.meta и XML
   // @ts-ignore - используется в WeaponTuningSliders
@@ -426,17 +392,17 @@ export const WeaponsPage = () => {
     })
 
   return (
-    <div className="flex-1 p-4 sm:p-6">
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl lg:text-2xl font-bold text-white mb-2">Оружие</h1>
+    <div className="flex-1 p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white mb-2">Оружие</h1>
         <div className="flex items-center space-x-2 text-sm mb-4">
           <div className={`px-2 py-1 rounded-full text-xs ${isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'}`}>
             {isAvailable ? '🎮 ALT:V' : '🌐 Browser'}
           </div>
         </div>
         
-        {/* Кнопки категорий - адаптивные */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
+        {/* Кнопки категорий */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
           <button
             className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
               activeTab === 'hub' 
@@ -536,7 +502,7 @@ export const WeaponsPage = () => {
       )}
 
       {!loading && !error && (
-        <div className="grid grid-cols-1 gap-2 sm:gap-3 overflow-x-hidden">
+        <div className="grid grid-cols-1 gap-3">
           {filteredWeapons.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               {searchQuery ? `Ничего не найдено по запросу "${searchQuery}"` : 'Оружие не найдено'}
@@ -552,7 +518,7 @@ export const WeaponsPage = () => {
                   <div key={weapon.id} className="bg-base-800 border border-base-700 rounded-lg">
                     {/* Archive header */}
                     <div
-                      className="p-3 sm:p-4 cursor-pointer hover:bg-base-700 transition-colors"
+                      className="p-4 cursor-pointer hover:bg-base-700 transition-colors"
                       onClick={() => toggleArchive(weapon.id)}
                     >
                       <div className="flex items-center justify-between">
@@ -609,7 +575,7 @@ export const WeaponsPage = () => {
                           return (
                             <div
                               key={childWeapon.id}
-                              className={`relative p-3 sm:p-4 ml-2 sm:ml-4 border-l-2 border-base-600 hover:bg-base-800 transition-colors cursor-pointer ${
+                              className={`relative p-4 ml-4 border-l-2 border-base-600 hover:bg-base-800 transition-colors cursor-pointer ${
                                 isActive ? 'border-l-purple-500 bg-purple-900/10' : ''
                               }`}
                               onClick={() => {
@@ -624,15 +590,15 @@ export const WeaponsPage = () => {
                                 setSelectedWeapon(childWeapon)
                               }}
                             >
-                              <div className="flex items-center justify-between gap-2 sm:gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div className={`text-xs sm:text-sm font-medium flex items-center space-x-2 ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400' : 'text-white'}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className={`text-sm font-medium flex items-center space-x-2 ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400' : 'text-white'}`}>
                                     {isCurrentWeapon && (
-                                      <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse flex-shrink-0" title="У вас экипировано это оружие" />
+                                      <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="У вас экипировано это оружие" />
                                     )}
-                                    <span className="truncate">{childWeapon.displayName || childWeapon.name}</span>
+                                    <span>{childWeapon.displayName || childWeapon.name}</span>
                                   </div>
-                                  <div className="text-xs text-gray-400 truncate">{childWeapon.name}</div>
+                                  <div className="text-xs text-gray-400">{childWeapon.name}</div>
                                 </div>
 
                                 <div className="flex items-center space-x-3">
@@ -665,7 +631,7 @@ export const WeaponsPage = () => {
               return (
                 <div
                   key={weapon.id}
-                  className={`relative p-3 sm:p-4 rounded-lg border transition-colors cursor-pointer ${
+                  className={`relative p-4 rounded-lg border transition-colors cursor-pointer ${
                     isActive
                       ? 'border-purple-500/60 bg-purple-900/10'
                       : 'bg-base-800 border-base-700 hover:bg-base-700'
@@ -686,15 +652,15 @@ export const WeaponsPage = () => {
                   {isActive && (
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-fuchsia-500 rounded-l" />
                   )}
-                  <div className="flex items-center justify-between gap-2 sm:gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-xs sm:text-sm font-medium flex items-center space-x-2 ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400' : 'text-white'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className={`text-sm font-medium flex items-center space-x-2 ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-fuchsia-400' : 'text-white'}`}>
                         {isCurrentWeapon && (
-                          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse flex-shrink-0" title="У вас экипировано это оружие" />
+                          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="У вас экипировано это оружие" />
                         )}
-                        <span className="truncate">{weapon.displayName || weapon.name}</span>
+                        <span>{weapon.displayName || weapon.name}</span>
                       </div>
-                      <div className="text-xs text-gray-400 truncate">{weapon.name}</div>
+                      <div className="text-xs text-gray-400">{weapon.name}</div>
                       {!('isGTAV' in weapon && weapon.isGTAV) && 'tags' in weapon && Array.isArray(weapon.tags) && weapon.tags.length > 0 && (
                         <div className="flex space-x-1 mt-1">
                           {weapon.tags.slice(0, 3).map((tag: string, idx: number) => (
@@ -783,7 +749,7 @@ export const WeaponsPage = () => {
         </div>
       )}
 
-      <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-base-800 rounded-lg">
+      <div className="mt-6 p-4 bg-base-800 rounded-lg">
         <div className="text-xs text-gray-400">
           {isAvailable
             ? '🎮 Подключено к ALT:V - оружие будет выдано в игре'
@@ -796,14 +762,18 @@ export const WeaponsPage = () => {
         <Portal>
           <div 
             className="pointer-events-auto fixed top-16 bottom-4 right-6 z-[9999] flex flex-col space-y-3 transition-all duration-300" 
-            style={{ left: focusMode !== 'off' ? '24px' : 'calc(15.6vw + 48px)' }}
+            style={{ left: focusMode !== 'off' ? 24 : 'calc(420px + 24px)' }}
           >
             {/* Header over panels - адаптивный под количество блоков */}
             {focusMode === 'off' && (showWeaponTuning || showWeaponMeta || showWeaponActions) && (
               <div
-                ref={headerRef}
                 className="rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
-                style={{ width: 'auto' }}
+                style={{ 
+                  width: (() => {
+                    const visiblePanels = [showWeaponTuning, showWeaponMeta, showWeaponActions].filter(Boolean).length
+                    return `calc(${visiblePanels * 620}px + ${(visiblePanels - 1) * 12}px)`
+                  })()
+                }}
                 title="Скрыть/показать панели"
                 onClick={() => {
                   setPanelsVisible(v => {
@@ -827,7 +797,7 @@ export const WeaponsPage = () => {
             <div className="flex space-x-3 flex-1 overflow-hidden">
               {/* Tuning sliders panel */}
               {(focusMode === 'off' || focusMode === 'tuning') && showWeaponTuning && (
-                <div data-weapon-panel-type="tuning" className="w-[calc((100vw-15.6vw-96px)/3)] min-w-[400px] max-w-[650px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+                <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
                   <WeaponTuningSliders
                     onChange={(param, value) => {
                       updateWeaponParameter(param, value)
@@ -856,7 +826,7 @@ export const WeaponsPage = () => {
               
               {/* Weapon.meta XML editor panel */}
               {(focusMode === 'off' || focusMode === 'meta') && showWeaponMeta && (
-                <div data-weapon-panel-type="meta" className="w-[calc((100vw-15.6vw-96px)/3)] min-w-[400px] max-w-[650px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+                <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
                   <WeaponMetaEditor 
                     xml={weaponMetaXml} 
                     onXmlChange={setWeaponMetaXml}
@@ -869,10 +839,9 @@ export const WeaponsPage = () => {
               {/* Weapon Actions panel */}
               {(focusMode === 'off' || focusMode === 'actions') && showWeaponActions && selectedWeapon && (
                 <div 
-                  data-weapon-panel-type="actions"
                   className={`${
-                    focusMode === 'actions' ? 'w-[min(400px,30vw)]' : 'w-[calc((100vw-15.6vw-96px)/3)]'
-                  } min-w-[320px] max-w-[650px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left transition-all duration-300`}
+                    focusMode === 'actions' ? 'w-[400px]' : 'w-[620px]'
+                  } h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left transition-all duration-300`}
                 >
                   <WeaponActions 
                     disabled={!currentWeapon || !selectedWeapon || currentWeapon.name !== selectedWeapon.name}

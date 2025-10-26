@@ -182,17 +182,17 @@ export const Dashboard = () => {
   }
 
   return (
-    <div className="flex-1 p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">Добро пожаловать!</h1>
+    <div className="flex-1 p-4 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl lg:text-2xl font-bold text-white mb-2">Добро пожаловать!</h1>
         <p className="text-gray-400">Выберите модуль из меню слева</p>
       </div>
       
       {/* Секция Избранное */}
-      <div className="bg-base-800/50 rounded-lg p-4 border border-base-700">
-        <div className="flex items-center gap-2 mb-4">
-          <Heart className="w-5 h-5 text-red-400" />
-          <h2 className="text-lg font-semibold text-white">Избранное - Быстрые действия</h2>
+      <div className="bg-base-800/50 rounded-lg p-3 sm:p-4 border border-base-700">
+        <div className="flex items-center gap-2 mb-3 sm:mb-4">
+          <Heart className="w-4 sm:w-5 h-4 sm:h-5 text-red-400" />
+          <h2 className="text-base lg:text-lg font-semibold text-white">Избранное - Быстрые действия</h2>
         </div>
         
         {isLoading ? (

@@ -19,10 +19,7 @@ html, body {
 }
 
 #root {
-  /* Адаптивная ширина: 15.6vw соответствует 400px на 2560px экране */
-  width: 15.6vw;
-  min-width: 320px;
-  max-width: 450px;
+  width: 400px;
   height: 100vh;
   background: transparent;
   display: flex;
@@ -34,23 +31,6 @@ html, body {
   background: rgba(20, 20, 20, 0.95);
   backdrop-filter: blur(10px);
   border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* CSS переменные для адаптивных размеров */
-:root {
-  /* Ширина меню: 15.6vw (400px на 2560px) */
-  --menu-width: 15.6vw;
-  --menu-min-width: 320px;
-  --menu-max-width: 450px;
-  
-  /* Отступы */
-  --spacing-base: 24px;
-  --spacing-panel: 12px;
-  
-  /* Размеры панелей (вычисляются от viewport) */
-  --panel-single: calc((100vw - var(--menu-width) - 96px) / 3);
-  --panel-double: calc((100vw - var(--menu-width) - 84px) / 2);
-  --panel-triple: calc(100vw - var(--menu-width) - 72px);
 }
 
 /* Скроллбары */

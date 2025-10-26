@@ -189,13 +189,6 @@ export const VehiclesPage = () => {
   const [userManuallyCollapsed, setUserManuallyCollapsed] = useState(false) // Отслеживание ручного сворачивания панелей
   const [showYftViewer, setShowYftViewer] = useState(false) // YFT 3D Viewer в полноэкранном режиме
   const [yftGameViewActive, setYftGameViewActive] = useState(false) // YFT Viewer в режиме Game View
-  const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
-  const [activeModel] = useState<string>('')
-  const headerRef = React.useRef<HTMLDivElement>(null) // Ref для заголовка панелей
-  
-  // Адаптивный сдвиг от левого края: ширина меню + отступ
-  // 15.6vw (меню) + 24px (отступ)
-  const panelLeft = 'calc(15.6vw + 24px)'
   
   // Отправляем событие изменения Game View в App
   useEffect(() => {
@@ -204,38 +197,9 @@ export const VehiclesPage = () => {
     window.dispatchEvent(event)
   }, [yftGameViewActive])
   
-  // Динамический расчет ширины заголовка на основе реальных панелей
-  useEffect(() => {
-    if (!headerRef.current || !panelsVisible) return
-    
-    const updateHeaderWidth = () => {
-      // Находим все видимые панели
-      const panels = document.querySelectorAll('[data-panel-type]')
-      if (panels.length === 0) return
-      
-      let totalWidth = 0
-      panels.forEach((panel) => {
-        totalWidth += panel.getBoundingClientRect().width
-      })
-      
-      // Добавляем отступы между панелями (12px каждый)
-      const gaps = (panels.length - 1) * 12
-      totalWidth += gaps
-      
-      if (headerRef.current) {
-        headerRef.current.style.width = `${totalWidth}px`
-      }
-    }
-    
-    // Обновляем при изменении видимости панелей
-    const timeout = setTimeout(updateHeaderWidth, 100)
-    window.addEventListener('resize', updateHeaderWidth)
-    
-    return () => {
-      clearTimeout(timeout)
-      window.removeEventListener('resize', updateHeaderWidth)
-    }
-  }, [panelsVisible, showTuning, showMeta, showActions, selectedVehicle])
+  const panelLeft = 420 // сдвиг от левого края (примерно ширина меню + отступ)
+  const [activeModel] = useState<string>('')
+  const [panelsVisible, setPanelsVisible] = useState<boolean>(false)
   const [pendingModelToSelect, setPendingModelToSelect] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [activeTab, setActiveTab] = useState<'hub' | 'gtav' | 'local'>('hub')
@@ -888,9 +852,9 @@ export const VehiclesPage = () => {
          }
 
   return (
-    <div className="flex-1 p-4 sm:p-6 relative">
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl lg:text-2xl font-bold text-white mb-2">Автомобили</h1>
+    <div className="flex-1 p-6 relative">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white mb-2">Автомобили</h1>
         <div className="flex items-center space-x-2 text-sm mb-4">
           <div className={`px-2 py-1 rounded-full text-xs ${
             isAvailable ? 'bg-green-900 text-green-300' : 'bg-orange-900 text-orange-300'
@@ -904,8 +868,8 @@ export const VehiclesPage = () => {
           )}
         </div>
         
-        {/* Кнопки категорий - адаптивные */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
+        {/* Кнопки категорий */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
           <button
             className={`w-full py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center space-x-2 ${
               activeTab === 'hub' 
@@ -1020,7 +984,7 @@ export const VehiclesPage = () => {
 
       {/* Vehicle Grid */}
       {loading && (
-        <div className="flex items-center justify-center py-6 sm:py-8">
+        <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
           <span className="ml-2 text-gray-400">Загрузка автомобилей...</span>
         </div>
@@ -1036,7 +1000,7 @@ export const VehiclesPage = () => {
       )}
 
       {!loading && !error && (
-        <div className="grid grid-cols-1 gap-2 sm:gap-3 overflow-x-hidden">
+        <div className="grid grid-cols-1 gap-3">
           {filteredVehicles.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               {searchQuery ? `Ничего не найдено по запросу "${searchQuery}"` : 'Автомобили не найдены'}
@@ -1103,7 +1067,7 @@ export const VehiclesPage = () => {
               return (
                 <div
                   key={vehicle.id}
-                  className={`relative p-3 sm:p-4 rounded-lg border transition-colors ${
+                  className={`relative p-4 rounded-lg border transition-colors ${
                     isActive
                       ? 'border-fuchsia-500/60 bg-fuchsia-900/10'
                       : 'bg-base-800 border-base-700 hover:bg-base-700'
@@ -1123,13 +1087,13 @@ export const VehiclesPage = () => {
                   {isActive && (
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-pink-500 to-fuchsia-500 rounded-l" />
                   )}
-                  <div className="flex items-center justify-between gap-2 sm:gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs sm:text-sm font-medium flex items-center space-x-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="text-sm font-medium flex items-center space-x-2">
                         {isCurrentVehicle && (
-                          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse flex-shrink-0" title="Вы в этой машине" />
+                          <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="Вы в этой машине" />
                         )}
-                        <span className={`truncate ${isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400' : 'text-white'}`}>
+                        <span className={isActive ? 'bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-fuchsia-400' : 'text-white'}>
                           {vehicle.displayName || vehicle.name}
                         </span>
                         
@@ -1165,7 +1129,7 @@ export const VehiclesPage = () => {
                           <span className="inline-flex items-center h-5 px-2 text-[10px] leading-none rounded-full bg-orange-900 text-orange-300">Нужен рестарт</span>
                         )}
                       </div>
-                      <div className="text-xs text-gray-400 truncate">{vehicle.name}</div>
+                      <div className="text-xs text-gray-400">{vehicle.name}</div>
                       {!('isGTAV' in vehicle && vehicle.isGTAV) && 'tags' in vehicle && vehicle.tags && vehicle.tags.length > 0 && (
                         <div className="flex space-x-1 mt-1">
                           {vehicle.tags.slice(0, 3).map((tag: string, index: number) => (
@@ -1256,7 +1220,7 @@ export const VehiclesPage = () => {
 
       {/* Current Vehicle Controls */}
       {currentVehicle && (
-        <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-base-800 rounded-lg">
+        <div className="mt-6 p-4 bg-base-800 rounded-lg">
           <h3 className="text-sm font-medium text-white mb-3">Текущий автомобиль</h3>
           <div className="flex items-center justify-between">
             <div>
@@ -1276,7 +1240,7 @@ export const VehiclesPage = () => {
       )}
 
       {/* Info */}
-      <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-base-800 rounded-lg">
+      <div className="mt-6 p-4 bg-base-800 rounded-lg">
         <div className="text-xs text-gray-400">
           {isAvailable 
             ? '🎮 Подключено к ALT:V - автомобили будут заспавнены в игре'
@@ -1285,7 +1249,7 @@ export const VehiclesPage = () => {
         </div>
       </div>
 
-        {/* Right side panels (tuning + meta editor) in a portal to escape layout */}
+      {/* Right side panels (tuning + meta editor) in a portal to escape layout */}
       {panelsVisible && (
         <Portal>
         <div 
@@ -1300,19 +1264,37 @@ export const VehiclesPage = () => {
             height: '100vh',
             background: 'transparent'
           } : {
-            // Обычный режим - панели справа (адаптивный left)
+            // Обычный режим - панели справа
             top: '4rem',
             bottom: '1rem',
-            left: focusMode !== 'off' ? '24px' : panelLeft,
-            right: '24px'
+            left: focusMode !== 'off' ? 24 : panelLeft,
+            right: 24
           }}
         >
           {/* Header over both panels - скрыть в режиме фокуса и Game View */}
           {focusMode === 'off' && !yftGameViewActive && (
             <div
-              ref={headerRef}
-              className="rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left"
-              style={{ width: 'auto' }}
+              className={`rounded-lg p-3 flex items-center space-x-3 border border-white/10 bg-gradient-to-r from-[#141421] via-[#171927] to-[#0f1913] shadow-[inset_0_1px_0_rgba(255,255,255,.06)] cursor-pointer animate-slide-in-left ${
+                // Динамическая ширина на основе количества видимых панелей
+                (() => {
+                  const visiblePanels = [
+                    showTuning && selectedVehicle && (
+                      (vehicleStatuses.get(selectedVehicle.id) as string) === 'downloaded' || 
+                      ('isGTAV' in selectedVehicle && (selectedVehicle as any).isGTAV) ||
+                      ('isLocal' in selectedVehicle && (selectedVehicle as any).isLocal)
+                    ),
+                    showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle),
+                    showActions && selectedVehicle
+                  ].filter(Boolean).length
+                  
+                  // Базовые размеры: 620px на панель + 12px отступы
+                  
+                  return visiblePanels === 0 ? 'w-full max-w-[calc(100vw-480px)]' :
+                         visiblePanels === 1 ? 'w-[620px]' :
+                         visiblePanels === 2 ? 'w-[1252px]' :
+                         'w-[1884px]'
+                })()
+              }`}
               title="Скрыть/показать панели"
               onClick={() => {
                 setPanelsVisible(v => {
@@ -1338,12 +1320,12 @@ export const VehiclesPage = () => {
             </div>
           )}
           
-          {/* YFT Viewer занимает всё пространство (адаптивная ширина в обычном режиме, 100% в Game View) */}
+          {/* YFT Viewer занимает всё пространство (1884px в обычном режиме, 100% в Game View) */}
           {showYftViewer && selectedVehicle && (selectedVehicle.name || selectedVehicle.modelName) && (
             <div 
               className={yftGameViewActive 
                 ? "w-full h-full overflow-hidden" 
-                : "w-[calc(100vw-15.6vw-72px)] h-[calc(100vh-190px)] overflow-hidden animate-slide-in-left"
+                : "w-[1884px] h-[calc(100vh-190px)] overflow-hidden animate-slide-in-left"
               }
               style={yftGameViewActive ? {
                 background: 'transparent',
@@ -1387,7 +1369,7 @@ export const VehiclesPage = () => {
               ('isGTAV' in selectedVehicle && (selectedVehicle as any).isGTAV) ||
               ('isLocal' in selectedVehicle && (selectedVehicle as any).isLocal)
             ) && (
-              <div data-panel-type="tuning" className="w-[calc((100vw-15.6vw-96px)/3)] min-w-[400px] max-w-[650px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+              <div className="w-[620px] h-[calc(100vh-190px)] overflow-y-auto bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
                 <div className="text-sm font-semibold text-white mb-3">Параметры</div>
                 <TuningSliders
                   onChange={(param, value) => updateHandling(param, value)}
@@ -1418,7 +1400,7 @@ export const VehiclesPage = () => {
           )}
           {/* Handling.meta editor panel */}
           {!showYftViewer && focusMode === 'off' && showMeta && selectedVehicle && shouldShowXmlEditor(selectedVehicle) && (
-            <div data-panel-type="meta" className="w-[calc((100vw-15.6vw-96px)/3)] min-w-[400px] max-w-[650px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
+            <div className="w-[620px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left">
               <div className="text-sm font-semibold text-white mb-2">handling.meta</div>
               <HandlingMetaEditor 
                 xml={handlingMetaXml} 
@@ -1431,10 +1413,9 @@ export const VehiclesPage = () => {
           {/* Vehicle actions panel - показывать если фокус выкл или фокус на действиях */}
           {!showYftViewer && (focusMode === 'off' || focusMode === 'actions') && showActions && selectedVehicle && (
             <div 
-              data-panel-type="actions"
               className={`${
-                focusMode === 'actions' ? 'w-[min(400px,30vw)]' : 'w-[calc((100vw-15.6vw-96px)/3)]'
-              } min-w-[320px] max-w-[650px] h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left transition-all duration-300`}
+                focusMode === 'actions' ? 'w-[400px]' : 'w-[620px]'
+              } h-[calc(100vh-190px)] overflow-hidden bg-base-900/80 backdrop-blur-sm border border-base-700 rounded-lg p-4 animate-slide-in-left transition-all duration-300`}
             >
               <VehicleActions 
                 disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}

@@ -830,10 +830,10 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
       {/* Контейнер viewer занимает всё пространство родителя */}
         {/* Header - скрываем в Game View режиме */}
         {!gameViewMode && (
-        <div className="flex items-center justify-between px-6 py-4 border-b border-base-700">
-          <div className="flex items-center space-x-3">
-            <Box className="w-5 h-5 text-primary-400" />
-            <h2 className="text-lg font-bold text-white">
+        <div className="flex items-center justify-between px-3 sm:px-4 lg:px-6 py-3 sm:py-4 border-b border-base-700">
+          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+            <Box className="w-4 sm:w-5 h-4 sm:h-5 text-primary-400 flex-shrink-0" />
+            <h2 className="text-base lg:text-lg font-bold text-white truncate">
               YFT 3D Viewer - {vehicleName}
             </h2>
             {meshData && (
@@ -849,12 +849,12 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
           </div>
           
           {/* Toolbar */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1 sm:space-x-2 flex-wrap gap-1">
             {/* Wireframe */}
             <button
               onClick={() => setViewMode('wireframe')}
               disabled={loading}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 viewMode === 'wireframe'
                   ? 'bg-green-600 text-white'
                   : 'bg-base-800 text-gray-400 hover:bg-base-700'
@@ -869,7 +869,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
             <button
               onClick={() => setViewMode('solid')}
               disabled={loading}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 viewMode === 'solid'
                   ? 'bg-blue-600 text-white'
                   : 'bg-base-800 text-gray-400 hover:bg-base-700'
@@ -884,7 +884,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
             <button
               onClick={() => setViewMode('real')}
               disabled={loading}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 viewMode === 'real'
                   ? 'bg-purple-600 text-white'
                   : 'bg-base-800 text-gray-400 hover:bg-base-700'
@@ -902,7 +902,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
             <button
               onClick={() => setGameViewMode(!gameViewMode)}
               disabled={loading}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 gameViewMode
                   ? 'bg-orange-600 text-white animate-pulse'
                   : 'bg-base-800 text-gray-400 hover:bg-base-700'
@@ -916,7 +916,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
             {/* Toggle Grid */}
             <button
               onClick={() => setShowGrid(!showGrid)}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 showGrid
                   ? 'bg-purple-600 text-white'
                   : 'bg-base-800 text-gray-400 hover:bg-base-700'
@@ -1026,7 +1026,7 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
               </div>
               
               {/* Calibration Panel */}
-              <div className="text-xs text-white bg-black/90 p-3 rounded-lg border border-purple-500/50 max-w-xs overflow-y-auto max-h-[60vh]">
+              <div className="text-xs text-white bg-black/90 p-3 rounded-lg border border-purple-500/50 w-full max-w-xs overflow-y-auto max-h-[60vh] overflow-x-hidden">
                 <div className="font-bold text-purple-400 mb-2">🎛️ Live Calibration</div>
                 
                 {/* Model Rotation */}
@@ -1259,9 +1259,9 @@ export function YftViewer({ vehicleName, onClose, onGameViewChange }: YftViewerP
         
         {/* Footer - Controls Help - скрываем в Game View режиме */}
         {!gameViewMode && (
-        <div className="px-6 py-3 border-t border-base-700 bg-base-800/50">
-          <div className="flex items-center justify-between text-xs text-gray-400">
-            <div className="flex items-center space-x-4">
+        <div className="px-3 sm:px-4 lg:px-6 py-2 sm:py-3 border-t border-base-700 bg-base-800/50">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-gray-400">
+            <div className="flex items-center space-x-2 sm:space-x-4 flex-wrap gap-1">
               <span>🖱️ ЛКМ - Вращение</span>
               <span>🖱️ ПКМ - Перемещение</span>
               <span>🖱️ Колесико - Зум</span>

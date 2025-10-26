@@ -2,9 +2,9 @@ import { Heart } from 'lucide-react'
 
 const FavoritesPage = () => {
   return (
-    <div className="flex-1 p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">Избранное</h1>
+    <div className="flex-1 p-4 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl lg:text-2xl font-bold text-white mb-2">Избранное</h1>
         <div className="flex items-center space-x-2 text-sm">
           <div className="px-2 py-1 rounded-full text-xs bg-purple-900 text-purple-300">
             ❤️ Избранное

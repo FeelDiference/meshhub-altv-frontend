@@ -59,9 +59,9 @@ const CharacterPage = () => {
   }
 
   return (
-    <div className="flex-1 p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">Персонаж</h1>
+    <div className="flex-1 p-4 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl lg:text-2xl font-bold text-white mb-2">Персонаж</h1>
         <div className="flex items-center space-x-2 text-sm mb-4">
           <div className="px-2 py-1 rounded-full text-xs bg-green-900 text-green-300">
             👤 Персонаж
@@ -69,7 +69,7 @@ const CharacterPage = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* Информация о игроке */}
         <div className="bg-base-800 rounded-lg p-6">
           <div className="flex items-center space-x-2 mb-4">
@@ -158,7 +158,7 @@ const CharacterPage = () => {
             </h2>
           </div>
           
-          <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
+          <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto overflow-x-hidden">
             {getCurrentItems().map((item) => (
               <button
                 key={item.id}

@@ -729,7 +729,7 @@ const VehicleTuning: React.FC<VehicleTuningProps> = ({ disabled = false, vehicle
                 ({availableCategories.length} доступно)
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                      {availableCategories.length > 0 ? (
                        availableCategories.map((categoryId) => {
                          const category = TUNING_CATEGORIES.find(c => c.id === categoryId)
