@@ -180,6 +180,25 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
   const [isLocallyEdited, setIsLocallyEdited] = React.useState<boolean>(false) // Флаг L от сервера
   const [uploadStatus, setUploadStatus] = React.useState<UploadStatusType | null>(null)
   const [isUploading, setIsUploading] = React.useState(false)
+  
+  // Состояние переключателя "Авто Рестарт ресурса" (Beta)
+  const [autoRestart, setAutoRestart] = React.useState<boolean>(() => {
+    // Загружаем из localStorage
+    try {
+      const saved = localStorage.getItem('meshhub_auto_restart_enabled')
+      return saved === 'true'
+    } catch (e) {
+      return false
+    }
+  })
+  
+  // Состояние прогресса перезапуска ресурса
+  const [restartProgress, setRestartProgress] = React.useState<{
+    active: boolean
+    step: number
+    total: number
+    message: string
+  } | null>(null)
 
   const handleFocusToggle = () => {
     if (onFocusModeToggle) {
@@ -187,6 +206,23 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       ;(window as any).__focusMode = newMode
       window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: newMode } }))
       onFocusModeToggle()
+    }
+  }
+  
+  // Переключение Авто Рестарт
+  const handleAutoRestartToggle = () => {
+    const newValue = !autoRestart
+    setAutoRestart(newValue)
+    
+    // Сохраняем в localStorage
+    try {
+      localStorage.setItem('meshhub_auto_restart_enabled', newValue.toString())
+      console.log(`[TuningSliders] Auto Restart ${newValue ? 'enabled' : 'disabled'}`)
+      toast.success(newValue ? 'Авто Рестарт включен' : 'Авто Рестарт выключен', {
+        duration: 2000
+      })
+    } catch (e) {
+      console.error('[TuningSliders] Failed to save auto restart state:', e)
     }
   }
 
@@ -366,7 +402,8 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       if (typeof window !== 'undefined' && 'alt' in window) {
         const eventData = {
           vehicleName: vehicleKey,
-          xmlContent: currentXml
+          xmlContent: currentXml,
+          autoRestart: autoRestart // Передаем флаг авто рестарта
         }
         
         console.log('[TuningSliders] 🔍 Checking alt availability...')
@@ -374,34 +411,32 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
         console.log('[TuningSliders] typeof window.alt:', typeof (window as any).alt)
         console.log('[TuningSliders] Data to send:', eventData.vehicleName, 'XML length:', eventData.xmlContent.length)
         
-        // Пробуем оба способа
-        let sent = false
+        // Пробуем оба способа (ВАЖНО: только один должен сработать!)
         
-        // Способ 1: Глобальный alt
+        // Способ 1: Глобальный alt (приоритетный)
         // @ts-ignore
         if (typeof alt !== 'undefined' && typeof alt.emit === 'function') {
           console.log('[TuningSliders] ✅ Using global alt.emit')
           // @ts-ignore
           alt.emit('meshhub:vehicle:save:handling:meta', eventData)
-          sent = true
+          console.log('[TuningSliders] ✅ Event sent successfully via global alt')
+          toast.success('Запрос на сохранение отправлен')
+          return
         }
         
-        // Способ 2: window.alt (на случай если глобальный не работает)
+        // Способ 2: window.alt (fallback если глобальный не работает)
         if (typeof (window as any).alt !== 'undefined' && typeof (window as any).alt.emit === 'function') {
           console.log('[TuningSliders] ✅ Using window.alt.emit')
           ;(window as any).alt.emit('meshhub:vehicle:save:handling:meta', eventData)
-          sent = true
-        }
-        
-        if (sent) {
-          console.log('[TuningSliders] ✅ Event sent successfully')
+          console.log('[TuningSliders] ✅ Event sent successfully via window.alt')
           toast.success('Запрос на сохранение отправлен')
           return
-        } else {
-          console.error('[TuningSliders] ❌ alt.emit не доступен!')
-          toast.error('Ошибка: WebView не подключён к AltV')
-          return
         }
+        
+        // Если ни один способ не сработал
+        console.error('[TuningSliders] ❌ alt.emit не доступен!')
+        toast.error('Ошибка: WebView не подключён к AltV')
+        return
       }
 
       // Fallback для браузера - обычная загрузка
@@ -456,6 +491,56 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       }
     }
   }, [uploadStatus?.id])
+  
+  // Обработчик прогресса перезапуска ресурса
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handleRestartProgress = (data: any) => {
+        console.log('[TuningSliders] 🔄 Resource restart progress:', data)
+        
+        if (data.step && data.total) {
+          setRestartProgress({
+            active: true,
+            step: data.step,
+            total: data.total,
+            message: data.message || ''
+          })
+          
+          // Показываем toast для ключевых шагов
+          if (data.step === 1 || data.step === data.total) {
+            toast(data.message, {
+              icon: '🔄',
+              duration: 2000
+            })
+          }
+        }
+      }
+      
+      const handleRestartComplete = (data: any) => {
+        console.log('[TuningSliders] ✅ Resource restart complete:', data)
+        
+        setRestartProgress(null)
+        
+        if (data.success) {
+          toast.success(`Ресурс перезапущен за ${data.totalTime}s!`, {
+            duration: 4000
+          })
+        } else {
+          toast.error(`Ошибка перезапуска: ${data.error}`, {
+            duration: 5000
+          })
+        }
+      }
+      
+      ;(window as any).alt.on('meshhub:resource:restart:progress', handleRestartProgress)
+      ;(window as any).alt.on('meshhub:resource:restart:complete', handleRestartComplete)
+      
+      return () => {
+        ;(window as any).alt.off('meshhub:resource:restart:progress', handleRestartProgress)
+        ;(window as any).alt.off('meshhub:resource:restart:complete', handleRestartComplete)
+      }
+    }
+  }, [])
 
   // Функция обновления статуса загрузки
   const handleRefreshUploadStatus = async () => {
@@ -606,8 +691,38 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
           )}
         </div>
 
-        {/* Правая часть - кнопки сохранения и отправки */}
+        {/* Правая часть - переключатель Авто Рестарт и кнопки сохранения */}
         <div className="flex items-center gap-2">
+          {/* Переключатель Авто Рестарт (Beta) */}
+          <div className="flex items-center gap-2 px-2 py-1 bg-base-800 border border-base-700 rounded-lg">
+            <button
+              onClick={handleAutoRestartToggle}
+              disabled={disabled}
+              className={`flex items-center gap-1.5 text-xs transition-all ${
+                disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'
+              }`}
+              title="Авто Рестарт ресурса: автоматически перезагружает ресурс автомобиля для применения изменений"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${autoRestart ? 'text-orange-400' : 'text-gray-500'} ${autoRestart ? 'animate-spin' : ''}`} style={{ animationDuration: autoRestart ? '3s' : undefined }} />
+              <span className={autoRestart ? 'text-orange-400 font-medium' : 'text-gray-400'}>
+                Авто Рестарт
+              </span>
+              {/* Badge Beta */}
+              <span className="px-1.5 py-0.5 bg-orange-500/20 border border-orange-500/40 rounded text-[10px] font-bold text-orange-400">
+                BETA
+              </span>
+              {/* Toggle визуализация */}
+              <div className={`
+                relative inline-flex h-4 w-8 items-center rounded-full transition-colors flex-shrink-0
+                ${disabled ? 'bg-gray-700' : autoRestart ? 'bg-orange-500' : 'bg-gray-600'}
+              `}>
+                <span className={`
+                  inline-block h-3 w-3 transform rounded-full bg-white transition-transform
+                  ${autoRestart ? 'translate-x-4' : 'translate-x-0.5'}
+                `} />
+              </div>
+            </button>
+          </div>
           {/* Кнопка сохранения */}
           <button
             onClick={handleSave}
@@ -632,12 +747,45 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
       </div>
 
       {/* Статус загрузки */}
-        {uploadStatus && uploadStatus.resource_name === vehicleKey && (
-          <UploadStatus 
-            upload={uploadStatus} 
-            onRefresh={handleRefreshUploadStatus}
-          />
-        )}
+      {uploadStatus && uploadStatus.resource_name === vehicleKey && (
+        <UploadStatus 
+          upload={uploadStatus} 
+          onRefresh={handleRefreshUploadStatus}
+        />
+      )}
+      
+      {/* Прогресс перезапуска ресурса */}
+      {restartProgress && restartProgress.active && (
+        <div className="p-3 rounded-lg border bg-orange-900/20 border-orange-500/30">
+          <div className="flex items-start space-x-3">
+            <RefreshCw className="w-4 h-4 text-orange-400 animate-spin mt-0.5" />
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-orange-400">
+                  Перезапуск ресурса...
+                </span>
+                <span className="text-xs text-orange-300">
+                  {restartProgress.step} / {restartProgress.total}
+                </span>
+              </div>
+              
+              {restartProgress.message && (
+                <div className="text-xs text-gray-300">
+                  {restartProgress.message}
+                </div>
+              )}
+              
+              {/* Прогресс-бар */}
+              <div className="w-full h-1.5 bg-base-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-orange-500 transition-all duration-300"
+                  style={{ width: `${(restartProgress.step / restartProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Сетка слайдеров - адаптивная */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

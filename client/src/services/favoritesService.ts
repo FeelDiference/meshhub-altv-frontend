@@ -58,12 +58,19 @@ class FavoritesStorage implements IFavoritesService {
     
     console.log('[FavoritesService] Initializing...')
     
+    // ВАЖНО: Начинаем с дефолтного состояния (гарантия что все поля есть)
+    this.state = { ...INITIAL_STATE }
+    
     // 1. Пытаемся загрузить из нового единого хранилища
     const loaded = await this.loadFromStorage()
     
     if (loaded) {
       console.log('[FavoritesService] Loaded from unified storage')
-      this.state = loaded
+      // Merge с INITIAL_STATE для безопасности
+      this.state = {
+        ...INITIAL_STATE,
+        ...loaded
+      }
     } else {
       // 2. Если нет, запускаем миграцию старых данных
       console.log('[FavoritesService] No unified storage found, checking for legacy data...')
@@ -71,7 +78,11 @@ class FavoritesStorage implements IFavoritesService {
       
       if (migrated) {
         console.log('[FavoritesService] Migrated legacy data successfully')
-        this.state = migrated
+        // Merge с INITIAL_STATE для безопасности
+        this.state = {
+          ...INITIAL_STATE,
+          ...migrated
+        }
         await this.saveToStorage()
       }
     }
@@ -288,6 +299,12 @@ class FavoritesStorage implements IFavoritesService {
       return
     }
     
+    // Защита от undefined
+    if (!this.state.hotkeys || !Array.isArray(this.state.hotkeys)) {
+      console.warn('[FavoritesService] hotkeys is not an array in setHotkey, initializing')
+      this.state.hotkeys = []
+    }
+    
     // Удаляем предыдущую привязку этого элемента (если есть)
     const filtered = this.state.hotkeys.filter(
       h => !(h.type === type && h.itemId === itemId)
@@ -324,6 +341,13 @@ class FavoritesStorage implements IFavoritesService {
     
     console.log(`[FavoritesService] Removing hotkey for ${type}:${itemId}`)
     
+    // Защита от undefined
+    if (!this.state.hotkeys || !Array.isArray(this.state.hotkeys)) {
+      console.warn('[FavoritesService] hotkeys is not an array in removeHotkey')
+      this.state.hotkeys = []
+      return
+    }
+    
     this.state = {
       ...this.state,
       hotkeys: this.state.hotkeys.filter(
@@ -338,6 +362,13 @@ class FavoritesStorage implements IFavoritesService {
    * Получить HotKey для элемента
    */
   getHotkey(type: FavoriteType, itemId: string): HotkeyBinding | null {
+    // Защита от undefined
+    if (!this.state.hotkeys || !Array.isArray(this.state.hotkeys)) {
+      console.warn('[FavoritesService] hotkeys is not an array in getHotkey')
+      this.state.hotkeys = []
+      return null
+    }
+    
     const binding = this.state.hotkeys.find(
       h => h.type === type && h.itemId === itemId
     )
@@ -348,6 +379,11 @@ class FavoritesStorage implements IFavoritesService {
    * Получить все HotKey привязки
    */
   getAllHotkeys(): HotkeyBinding[] {
+    // Защита от undefined
+    if (!this.state.hotkeys || !Array.isArray(this.state.hotkeys)) {
+      console.warn('[FavoritesService] hotkeys is not an array, returning empty array')
+      this.state.hotkeys = []
+    }
     return [...this.state.hotkeys]
   }
 
@@ -355,6 +391,13 @@ class FavoritesStorage implements IFavoritesService {
    * Найти привязку по нажатой клавише
    */
   findByHotkey(key: string, modifiers?: HotkeyBinding['modifiers']): HotkeyBinding | null {
+    // Защита от undefined
+    if (!this.state.hotkeys || !Array.isArray(this.state.hotkeys)) {
+      console.warn('[FavoritesService] hotkeys is not an array in findByHotkey')
+      this.state.hotkeys = []
+      return null
+    }
+    
     const normalized = {
       ctrl: modifiers?.ctrl || false,
       alt: modifiers?.alt || false,
@@ -403,28 +446,41 @@ class FavoritesStorage implements IFavoritesService {
     try {
       const alt = (window as any).alt
       
+      // Защита от undefined для всех полей
+      const safeState = {
+        weather: this.state.weather || [],
+        time: this.state.time || [],
+        timeSpeed: this.state.timeSpeed || [],
+        vehicles: this.state.vehicles || [],
+        vehicleActions: this.state.vehicleActions || [],
+        weaponActions: this.state.weaponActions || [],
+        locations: this.state.locations || [],
+        teleportMarkers: this.state.teleportMarkers || [],
+        hotkeys: this.state.hotkeys || []
+      }
+      
       // Отправляем разные типы избранного на соответствующие каналы Alt:V
       // Погода, время, скорость времени, teleportMarkers
       alt.emit('world:favorites:save', { 
         favorites: {
-          weather: this.state.weather,
-          time: this.state.time,
-          timeSpeed: this.state.timeSpeed,
-          teleportMarkers: this.state.teleportMarkers
+          weather: safeState.weather,
+          time: safeState.time,
+          timeSpeed: safeState.timeSpeed,
+          teleportMarkers: safeState.teleportMarkers
         }
       })
       
       // Автомобили
-      alt.emit('favorites:vehicles:save', { vehicles: this.state.vehicles })
+      alt.emit('favorites:vehicles:save', { vehicles: safeState.vehicles })
       
       // Действия с автомобилем
-      alt.emit('favorites:vehicle-actions:save', { actions: this.state.vehicleActions })
+      alt.emit('favorites:vehicle-actions:save', { actions: safeState.vehicleActions })
       
       // Действия с оружием
-      alt.emit('favorites:weapon-actions:save', { actions: this.state.weaponActions })
+      alt.emit('favorites:weapon-actions:save', { actions: safeState.weaponActions })
       
       // HotKeys
-      alt.emit('favorites:hotkeys:save', { hotkeys: this.state.hotkeys })
+      alt.emit('favorites:hotkeys:save', { hotkeys: safeState.hotkeys })
       
       console.log('[FavoritesService] Synced with Alt:V')
     } catch (error) {
@@ -467,7 +523,23 @@ class FavoritesStorage implements IFavoritesService {
         return null
       }
       
-      return parsed.data
+      // КРИТИЧНО: Убеждаемся что все поля существуют (merge с INITIAL_STATE)
+      const data = {
+        ...INITIAL_STATE,
+        ...parsed.data,
+        // Гарантируем что массивы существуют
+        hotkeys: parsed.data.hotkeys || [],
+        weather: parsed.data.weather || [],
+        time: parsed.data.time || [],
+        timeSpeed: parsed.data.timeSpeed || [],
+        vehicles: parsed.data.vehicles || [],
+        vehicleActions: parsed.data.vehicleActions || [],
+        weaponActions: parsed.data.weaponActions || [],
+        locations: parsed.data.locations || [],
+        teleportMarkers: parsed.data.teleportMarkers || []
+      }
+      
+      return data
     } catch (error) {
       console.error('[FavoritesService] Error loading from storage:', error)
       return null

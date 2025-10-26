@@ -191,34 +191,32 @@ const WeaponTuningSliders: React.FC<WeaponTuningSlidersProps> = ({
         console.log('[WeaponTuningSliders] 🔍 Checking alt availability...')
         console.log('[WeaponTuningSliders] Data to send:', eventData.weaponName, 'XML length:', eventData.xmlContent.length)
         
-        // Пробуем оба способа
-        let sent = false
+        // Пробуем оба способа (ВАЖНО: только один должен сработать!)
         
-        // Способ 1: Глобальный alt
+        // Способ 1: Глобальный alt (приоритетный)
         // @ts-ignore
         if (typeof alt !== 'undefined' && typeof alt.emit === 'function') {
           console.log('[WeaponTuningSliders] ✅ Using global alt.emit')
           // @ts-ignore
           alt.emit('meshhub:weapon:save:meta', eventData)
-          sent = true
+          console.log('[WeaponTuningSliders] ✅ Event sent successfully via global alt')
+          toast.success('Запрос на сохранение отправлен')
+          return
         }
         
-        // Способ 2: window.alt (на случай если глобальный не работает)
+        // Способ 2: window.alt (fallback если глобальный не работает)
         if (typeof (window as any).alt !== 'undefined' && typeof (window as any).alt.emit === 'function') {
           console.log('[WeaponTuningSliders] ✅ Using window.alt.emit')
           ;(window as any).alt.emit('meshhub:weapon:save:meta', eventData)
-          sent = true
-        }
-        
-        if (sent) {
-          console.log('[WeaponTuningSliders] ✅ Event sent successfully')
+          console.log('[WeaponTuningSliders] ✅ Event sent successfully via window.alt')
           toast.success('Запрос на сохранение отправлен')
           return
-        } else {
-          console.error('[WeaponTuningSliders] ❌ alt.emit не доступен!')
-          toast.error('Ошибка: WebView не подключён к AltV')
-          return
         }
+        
+        // Если ни один способ не сработал
+        console.error('[WeaponTuningSliders] ❌ alt.emit не доступен!')
+        toast.error('Ошибка: WebView не подключён к AltV')
+        return
       }
 
       // Fallback для браузера - обычная загрузка
