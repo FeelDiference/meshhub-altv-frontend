@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Car, Settings, MapPin, Zap, LogOut, User, Globe, Users } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
+import toast from 'react-hot-toast'
 import { useAuth } from '@/hooks/useAuth'
 import { useALTV } from '@/hooks/useALTV'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { useHotkeys } from '@/hooks/useHotkeys'
+import { useFavorites } from '@/hooks/useFavorites'
 import { Button } from '@/components/common/Button'
 import { logAppPathInfo } from '@/utils/pathDetection'
 import { setupAltVAuthHandlers } from '@/services/auth'
@@ -20,6 +23,8 @@ import {
   getLegacyDataStats
 } from '@/utils/favoritesMigration'
 import { favoritesService } from '@/services/favoritesService'
+import type { FavoriteType } from '@/types/favorites'
+import { VEHICLE_ACTION_CONFIGS, WEAPON_ACTION_CONFIGS } from '@/config/favorites'
 
 
 function App() {
@@ -27,6 +32,108 @@ function App() {
   const [currentPage, setCurrentPage] = useState('dashboard')
   const [yftGameViewActive, setYftGameViewActive] = useState(false) // Game View mode from YFT Viewer
   const [focusMode, setFocusMode] = useState<string>('off') // Состояние для focusMode
+  
+  // Получаем методы из useFavorites для executor
+  const { favoriteLocations, favoriteTeleportMarkers } = useFavorites()
+  
+  /**
+   * Универсальный executor для HotKeys
+   * Выполняет действие в зависимости от типа избранного
+   */
+  const executeHotkeyAction = (type: FavoriteType, itemId: string) => {
+    console.log(`[App] Executing hotkey action: ${type}:${itemId}`)
+    
+    if (typeof window === 'undefined' || !('alt' in window)) {
+      console.warn('[App] Alt:V not available')
+      return
+    }
+    
+    const alt = (window as any).alt
+    
+    switch (type) {
+      case 'weather':
+        alt.emit('world:weather:set', { weather: itemId })
+        toast.success(`Погода: ${itemId}`)
+        break
+        
+      case 'time':
+        alt.emit('world:time:set', { time: itemId })
+        toast.success(`Время: ${itemId}`)
+        break
+        
+      case 'timeSpeed': {
+        const speed = parseFloat(itemId)
+        alt.emit('world:time:speed', { speed })
+        toast.success(`Скорость времени: ${speed}x`)
+        break
+      }
+        
+      case 'vehicle':
+        alt.emit('vehicle:spawn', { modelName: itemId })
+        toast.success(`Заспавнен: ${itemId}`)
+        break
+        
+      case 'vehicleAction': {
+        // Специальная обработка для спидометра
+        if (itemId === 'speedometer_toggle') {
+          alt.emit('speedometer:toggle')
+          toast.success('Спидометр переключен')
+          break
+        }
+        
+        // Специальная обработка для телепорта на трассу
+        if (itemId === 'teleport_to_location') {
+          alt.emit('speedtest:teleport:track')
+          toast.success('Телепорт на трассу')
+          break
+        }
+        
+        // Остальные действия
+        alt.emit('vehicle:action', { action: itemId })
+        const actionConfig = VEHICLE_ACTION_CONFIGS.find(a => a.id === itemId)
+        toast.success(`Выполнено: ${actionConfig?.label || itemId}`)
+        break
+      }
+        
+      case 'weaponAction': {
+        alt.emit('weapon:action', { action: itemId })
+        const actionConfig = WEAPON_ACTION_CONFIGS.find(a => a.id === itemId)
+        toast.success(`Выполнено: ${actionConfig?.label || itemId}`)
+        break
+      }
+        
+      case 'location': {
+        const location = favoriteLocations.find(l => l.id === itemId)
+        if (location) {
+          alt.emit('meshhub:interior:teleport', {
+            interiorId: location.id,
+            archetypeName: location.name,
+            position: location.coords
+          })
+          toast.success(`Телепорт: ${location.name}`)
+        }
+        break
+      }
+        
+      case 'teleportMarker': {
+        const marker = favoriteTeleportMarkers.find(m => m.id === itemId)
+        if (marker) {
+          alt.emit('world:teleport', { position: marker.position })
+          toast.success(`Телепорт: ${marker.name}`)
+        }
+        break
+      }
+        
+      default:
+        console.warn(`[App] Unknown favorite type: ${type}`)
+    }
+  }
+  
+  // Интеграция HotKeys - работает в WebView
+  useHotkeys({
+    enabled: true,
+    onExecute: executeHotkeyAction
+  })
   
   // Миграция избранного (один раз при первой загрузке)
   useEffect(() => {

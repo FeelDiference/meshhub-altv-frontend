@@ -4,7 +4,7 @@
  */
 
 import type { ComponentType } from 'react'
-import type { FavoriteConfig } from '@/types/favorites'
+import type { FavoriteConfig, HotkeyBinding } from '@/types/favorites'
 import { FavoriteItem } from './FavoriteItem'
 
 interface FavoriteSectionProps<T = any> {
@@ -17,6 +17,10 @@ interface FavoriteSectionProps<T = any> {
   onRemove: (item: T) => void
   onEdit?: (item: T, newName: string) => void
   canEdit?: boolean
+  // HotKey поддержка
+  getHotkey?: (itemId: string) => HotkeyBinding | null
+  onSetHotkey?: (itemId: string, key: string, modifiers?: HotkeyBinding['modifiers']) => void
+  onRemoveHotkey?: (itemId: string) => void
 }
 
 /**
@@ -31,7 +35,10 @@ export function FavoriteSection<T>({
   onExecute, 
   onRemove, 
   onEdit,
-  canEdit = false 
+  canEdit = false,
+  getHotkey,
+  onSetHotkey,
+  onRemoveHotkey
 }: FavoriteSectionProps<T>) {
   if (!items || items.length === 0) {
     return null
@@ -44,17 +51,25 @@ export function FavoriteSection<T>({
         {title}:
       </h3>
       <div className="space-y-2">
-        {items.map((item, index) => (
-          <FavoriteItem
-            key={config.getId(item) || index}
-            config={config}
-            item={item}
-            onExecute={onExecute}
-            onRemove={onRemove}
-            onEdit={onEdit}
-            canEdit={canEdit}
-          />
-        ))}
+        {items.map((item, index) => {
+          const itemId = config.getId(item)
+          const hotkey = getHotkey ? getHotkey(itemId) : null
+          
+          return (
+            <FavoriteItem
+              key={itemId || index}
+              config={config}
+              item={item}
+              onExecute={onExecute}
+              onRemove={onRemove}
+              onEdit={onEdit}
+              canEdit={canEdit}
+              hotkey={hotkey}
+              onSetHotkey={onSetHotkey}
+              onRemoveHotkey={onRemoveHotkey}
+            />
+          )
+        })}
       </div>
     </div>
   )

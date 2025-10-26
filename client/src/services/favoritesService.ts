@@ -7,7 +7,8 @@ import type {
   FavoritesState, 
   FavoritesStorageData, 
   FavoriteType,
-  IFavoritesService 
+  IFavoritesService,
+  HotkeyBinding
 } from '@/types/favorites'
 import { FAVORITE_CONFIGS } from '@/config/favorites'
 
@@ -32,6 +33,7 @@ const INITIAL_STATE: FavoritesState = {
   weaponActions: [],
   locations: [],
   teleportMarkers: [],
+  hotkeys: [],
 }
 
 // ============================================================================
@@ -263,6 +265,125 @@ class FavoritesStorage implements IFavoritesService {
     }
   }
 
+  // ========================================================================
+  // HotKeys методы
+  // ========================================================================
+
+  /**
+   * Установить HotKey для избранного элемента
+   */
+  async setHotkey(
+    type: FavoriteType, 
+    itemId: string, 
+    key: string, 
+    modifiers?: HotkeyBinding['modifiers']
+  ): Promise<void> {
+    if (!this.initialized) await this.init()
+    
+    console.log(`[FavoritesService] Setting hotkey ${key} for ${type}:${itemId}`)
+    
+    // Проверяем, что элемент в избранном
+    if (!this.has(type, itemId)) {
+      console.warn('[FavoritesService] Cannot set hotkey for non-favorite item')
+      return
+    }
+    
+    // Удаляем предыдущую привязку этого элемента (если есть)
+    const filtered = this.state.hotkeys.filter(
+      h => !(h.type === type && h.itemId === itemId)
+    )
+    
+    // Удаляем привязку этой клавиши к другим элементам (одна клавиша = один элемент)
+    const withoutDuplicateKeys = filtered.filter(h => {
+      const sameKey = h.key === key
+      const sameModifiers = JSON.stringify(h.modifiers || {}) === JSON.stringify(modifiers || {})
+      return !(sameKey && sameModifiers)
+    })
+    
+    // Добавляем новую привязку
+    const newBinding: HotkeyBinding = {
+      type,
+      itemId,
+      key,
+      modifiers
+    }
+    
+    this.state = {
+      ...this.state,
+      hotkeys: [...withoutDuplicateKeys, newBinding]
+    }
+    
+    await this.saveAndSync()
+  }
+
+  /**
+   * Удалить HotKey для элемента
+   */
+  async removeHotkey(type: FavoriteType, itemId: string): Promise<void> {
+    if (!this.initialized) await this.init()
+    
+    console.log(`[FavoritesService] Removing hotkey for ${type}:${itemId}`)
+    
+    this.state = {
+      ...this.state,
+      hotkeys: this.state.hotkeys.filter(
+        h => !(h.type === type && h.itemId === itemId)
+      )
+    }
+    
+    await this.saveAndSync()
+  }
+
+  /**
+   * Получить HotKey для элемента
+   */
+  getHotkey(type: FavoriteType, itemId: string): HotkeyBinding | null {
+    const binding = this.state.hotkeys.find(
+      h => h.type === type && h.itemId === itemId
+    )
+    return binding || null
+  }
+
+  /**
+   * Получить все HotKey привязки
+   */
+  getAllHotkeys(): HotkeyBinding[] {
+    return [...this.state.hotkeys]
+  }
+
+  /**
+   * Найти привязку по нажатой клавише
+   */
+  findByHotkey(key: string, modifiers?: HotkeyBinding['modifiers']): HotkeyBinding | null {
+    const normalized = {
+      ctrl: modifiers?.ctrl || false,
+      alt: modifiers?.alt || false,
+      shift: modifiers?.shift || false
+    }
+    
+    const binding = this.state.hotkeys.find(h => {
+      if (h.key !== key) return false
+      
+      const hModifiers = {
+        ctrl: h.modifiers?.ctrl || false,
+        alt: h.modifiers?.alt || false,
+        shift: h.modifiers?.shift || false
+      }
+      
+      return (
+        hModifiers.ctrl === normalized.ctrl &&
+        hModifiers.alt === normalized.alt &&
+        hModifiers.shift === normalized.shift
+      )
+    })
+    
+    return binding || null
+  }
+
+  // ========================================================================
+  // Синхронизация
+  // ========================================================================
+
   /**
    * Синхронизация (общая)
    */
@@ -301,6 +422,9 @@ class FavoritesStorage implements IFavoritesService {
       
       // Действия с оружием
       alt.emit('favorites:weapon-actions:save', { actions: this.state.weaponActions })
+      
+      // HotKeys
+      alt.emit('favorites:hotkeys:save', { hotkeys: this.state.hotkeys })
       
       console.log('[FavoritesService] Synced with Alt:V')
     } catch (error) {

@@ -9,7 +9,8 @@ import type {
   FavoritesState, 
   FavoriteType,
   FavoriteLocation,
-  FavoriteTeleportMarker 
+  FavoriteTeleportMarker,
+  HotkeyBinding
 } from '@/types/favorites'
 import toast from 'react-hot-toast'
 
@@ -28,6 +29,7 @@ export function useFavorites() {
     weaponActions: [],
     locations: [],
     teleportMarkers: [],
+    hotkeys: [],
   })
   
   // Состояние загрузки
@@ -192,6 +194,60 @@ export function useFavorites() {
     state.teleportMarkers.length > 0
   
   // ========================================================================
+  // HotKeys методы
+  // ========================================================================
+  
+  /**
+   * Установить HotKey
+   */
+  const setHotkey = useCallback(async (
+    type: FavoriteType, 
+    itemId: string, 
+    key: string, 
+    modifiers?: HotkeyBinding['modifiers']
+  ) => {
+    try {
+      await favoritesService.setHotkey(type, itemId, key, modifiers)
+      toast.success(`HotKey установлен: ${formatHotkeyForDisplay(key, modifiers)}`)
+    } catch (error) {
+      console.error('[useFavorites] Error setting hotkey:', error)
+      toast.error('Ошибка установки HotKey')
+    }
+  }, [])
+  
+  /**
+   * Удалить HotKey
+   */
+  const removeHotkey = useCallback(async (type: FavoriteType, itemId: string) => {
+    try {
+      await favoritesService.removeHotkey(type, itemId)
+      toast.success('HotKey удален')
+    } catch (error) {
+      console.error('[useFavorites] Error removing hotkey:', error)
+      toast.error('Ошибка удаления HotKey')
+    }
+  }, [])
+  
+  /**
+   * Получить HotKey для элемента
+   */
+  const getHotkey = useCallback((type: FavoriteType, itemId: string) => {
+    return favoritesService.getHotkey(type, itemId)
+  }, [])
+  
+  /**
+   * Форматирование hotkey для отображения
+   */
+  const formatHotkeyForDisplay = (key: string, modifiers?: HotkeyBinding['modifiers']): string => {
+    const parts: string[] = []
+    if (modifiers?.ctrl) parts.push('Ctrl')
+    if (modifiers?.alt) parts.push('Alt')
+    if (modifiers?.shift) parts.push('Shift')
+    parts.push(key.toUpperCase())
+    return parts.join('+')
+  }
+  
+  // ========================================================================
   // Возврат
   // ========================================================================
   
@@ -221,6 +277,11 @@ export function useFavorites() {
     remove,
     toggle,
     has,
+    
+    // HotKey методы
+    setHotkey,
+    removeHotkey,
+    getHotkey,
     
     // Legacy методы (для обратной совместимости)
     toggleVehicleFavorite,

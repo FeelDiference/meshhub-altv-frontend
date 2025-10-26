@@ -52,6 +52,7 @@ export async function migrateLegacyFavorites(): Promise<FavoritesState | null> {
     weaponActions: [],
     locations: [],
     teleportMarkers: [],
+    hotkeys: [],
   }
   
   let hasMigratedData = false

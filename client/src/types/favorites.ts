@@ -59,6 +59,20 @@ export interface FavoriteTeleportMarker {
 // ============================================================================
 
 /**
+ * Привязка HotKey к избранному элементу
+ */
+export interface HotkeyBinding {
+  type: FavoriteType
+  itemId: string
+  key: string                     // Клавиша (F1, F2, 1, 2, Q, E и т.д.)
+  modifiers?: {
+    ctrl?: boolean
+    alt?: boolean
+    shift?: boolean
+  }
+}
+
+/**
  * Полное состояние всего избранного в приложении
  */
 export interface FavoritesState {
@@ -75,6 +89,9 @@ export interface FavoritesState {
   // Локации
   locations: FavoriteLocation[]
   teleportMarkers: string[]       // ID маркеров (сами маркеры хранятся отдельно)
+  
+  // HotKeys
+  hotkeys: HotkeyBinding[]        // Привязки горячих клавиш
 }
 
 /**
@@ -140,6 +157,13 @@ export interface IFavoritesService {
   add<T>(type: FavoriteType, item: T): Promise<void>
   remove(type: FavoriteType, id: string): Promise<void>
   toggle<T>(type: FavoriteType, item: T): Promise<boolean> // Возвращает новое состояние
+  
+  // HotKeys
+  setHotkey(type: FavoriteType, itemId: string, key: string, modifiers?: HotkeyBinding['modifiers']): Promise<void>
+  removeHotkey(type: FavoriteType, itemId: string): Promise<void>
+  getHotkey(type: FavoriteType, itemId: string): HotkeyBinding | null
+  getAllHotkeys(): HotkeyBinding[]
+  findByHotkey(key: string, modifiers?: HotkeyBinding['modifiers']): HotkeyBinding | null
   
   // Синхронизация
   sync(): Promise<void>

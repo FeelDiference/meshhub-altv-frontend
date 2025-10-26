@@ -9,7 +9,8 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { FavoriteSection } from '@/components/common/FavoriteSection'
 import { 
   FAVORITE_CONFIGS, 
-  VEHICLE_ACTION_CONFIGS 
+  VEHICLE_ACTION_CONFIGS,
+  WEAPON_ACTION_CONFIGS
 } from '@/config/favorites'
 import type { FavoriteLocation, FavoriteTeleportMarker } from '@/types/favorites'
 
@@ -24,7 +25,10 @@ export const Dashboard = () => {
     isLoading,
     hasFavorites,
     remove,
-    updateLocationName
+    updateLocationName,
+    setHotkey,
+    removeHotkey,
+    getHotkey
   } = useFavorites()
 
   console.log('[Dashboard] State:', {
@@ -167,6 +171,24 @@ export const Dashboard = () => {
       }
     }
   }
+  
+  /**
+   * Выполнить действие с оружием
+   */
+  const executeWeaponAction = (actionId: string) => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      try {
+        // Отправляем действие в Alt:V
+        ;(window as any).alt.emit('weapon:action', { action: actionId })
+        
+        const actionConfig = WEAPON_ACTION_CONFIGS.find(a => a.id === actionId)
+        toast.success(`Выполнено: ${actionConfig?.label || actionId}`)
+      } catch (error) {
+        console.error('[Dashboard] Error executing weapon action:', error)
+        toast.error('Ошибка выполнения действия')
+      }
+    }
+  }
 
   /**
    * Обработчик удаления с toast
@@ -234,6 +256,9 @@ export const Dashboard = () => {
                 config={FAVORITE_CONFIGS.weather}
                 onExecute={applyWeather}
                 onRemove={(weather) => handleRemove('weather', weather)}
+                getHotkey={(id) => getHotkey('weather', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('weather', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('weather', id)}
               />
             )}
             
@@ -247,6 +272,9 @@ export const Dashboard = () => {
                 config={FAVORITE_CONFIGS.time}
                 onExecute={applyTime}
                 onRemove={(time) => handleRemove('time', time)}
+                getHotkey={(id) => getHotkey('time', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('time', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('time', id)}
               />
             )}
             
@@ -260,6 +288,9 @@ export const Dashboard = () => {
                 config={FAVORITE_CONFIGS.timeSpeed}
                 onExecute={applyTimeSpeed}
                 onRemove={(speed) => handleRemove('timeSpeed', speed)}
+                getHotkey={(id) => getHotkey('timeSpeed', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('timeSpeed', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('timeSpeed', id)}
               />
             )}
             
@@ -275,6 +306,9 @@ export const Dashboard = () => {
                 onRemove={(location) => handleRemove('location', location)}
                 onEdit={handleEditLocation}
                 canEdit={true}
+                getHotkey={(id) => getHotkey('location', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('location', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('location', id)}
               />
             )}
             
@@ -288,6 +322,9 @@ export const Dashboard = () => {
                 config={FAVORITE_CONFIGS.teleportMarker}
                 onExecute={teleportToMarker}
                 onRemove={(marker) => handleRemove('teleportMarker', marker)}
+                getHotkey={(id) => getHotkey('teleportMarker', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('teleportMarker', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('teleportMarker', id)}
               />
             )}
             
@@ -301,6 +338,9 @@ export const Dashboard = () => {
                 config={FAVORITE_CONFIGS.vehicle}
                 onExecute={spawnVehicle}
                 onRemove={(vehicle) => handleRemove('vehicle', vehicle)}
+                getHotkey={(id) => getHotkey('vehicle', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('vehicle', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('vehicle', id)}
               />
             )}
             
@@ -314,6 +354,25 @@ export const Dashboard = () => {
                 config={FAVORITE_CONFIGS.vehicleAction}
                 onExecute={executeVehicleAction}
                 onRemove={(actionId) => handleRemove('vehicleAction', actionId)}
+                getHotkey={(id) => getHotkey('vehicleAction', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('vehicleAction', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('vehicleAction', id)}
+              />
+            )}
+            
+            {/* Действия с оружием */}
+            {state.weaponActions.length > 0 && (
+              <FavoriteSection
+                title={FAVORITE_CONFIGS.weaponAction.sectionTitle}
+                icon={FAVORITE_CONFIGS.weaponAction.icon}
+                iconColor={FAVORITE_CONFIGS.weaponAction.color}
+                items={state.weaponActions}
+                config={FAVORITE_CONFIGS.weaponAction}
+                onExecute={executeWeaponAction}
+                onRemove={(actionId) => handleRemove('weaponAction', actionId)}
+                getHotkey={(id) => getHotkey('weaponAction', id)}
+                onSetHotkey={(id, key, mods) => setHotkey('weaponAction', id, key, mods)}
+                onRemoveHotkey={(id) => removeHotkey('weaponAction', id)}
               />
             )}
           </div>
