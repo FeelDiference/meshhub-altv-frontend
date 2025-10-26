@@ -10,6 +10,7 @@ import Portal from '@/components/common/Portal'
 import { fetchHandlingMeta } from '@/services/rpf'
 import { updateXmlNumericValue, paramToXmlTag } from '@/utils/updateXml'
 import { useALTV } from '@/hooks/useALTV'
+import { useFavorites } from '@/hooks/useFavorites'
 import { Button } from '@/components/common/Button'
 import { getVehicles } from '@/services/vehicles'
 import type { AnyVehicle } from '@/types/vehicle'
@@ -23,61 +24,18 @@ export const VehiclesPage = () => {
   const [localEdits, setLocalEdits] = useState<string[]>([])
   const [restartRequired, setRestartRequired] = useState<string[]>([])
   
-  // Состояние для избранных машин (загружается через Alt:V)
-  const [favoriteVehicles, setFavoriteVehicles] = useState<string[]>([])
+  // Используем НОВУЮ централизованную систему избранного
+  const { toggle, has } = useFavorites()
 
-  // Функции для управления избранными
-  const toggleFavorite = useCallback((vehicleName: string) => {
+  // Функции для управления избранными через новую систему
+  const toggleFavorite = useCallback(async (vehicleName: string) => {
     console.log(`[VehiclesPage] Toggling favorite for vehicle: ${vehicleName}`)
-    
-    // Отправляем в Alt:V для переключения избранного
-    if (typeof window !== 'undefined' && 'alt' in window) {
-      ;(window as any).alt.emit('favorites:vehicle:toggle', {
-        vehicleName,
-        isFavorite: !favoriteVehicles.includes(vehicleName)
-      })
-    } else {
-      console.warn('[VehiclesPage] Alt:V not available, cannot toggle favorite')
-    }
-  }, [favoriteVehicles])
+    await toggle('vehicle', vehicleName)
+  }, [toggle])
 
   const isFavorite = useCallback((vehicleName: string) => {
-    return favoriteVehicles?.includes(vehicleName) || false
-  }, [favoriteVehicles])
-  
-  // Загрузка и обработка избранных машин от Alt:V
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'alt' in window) {
-      // Загружаем избранные машины при монтировании
-      ;(window as any).alt.emit('favorites:vehicles:load')
-      console.log('[VehiclesPage] Requesting favorite vehicles from Alt:V storage')
-
-      const handleVehicleFavoritesResponse = (data: any) => {
-        console.log('[VehiclesPage] Received vehicle favorites response:', data)
-        if (data.success && data.vehicles) {
-          setFavoriteVehicles(data.vehicles)
-          console.log('[VehiclesPage] Loaded favorite vehicles:', data.vehicles)
-        } else {
-          console.error('[VehiclesPage] Failed to load vehicle favorites:', data.error)
-        }
-      }
-
-      const handleVehicleFavoritesUpdated = (data: any) => {
-        console.log('[VehiclesPage] Vehicle favorites updated:', data)
-        if (data.vehicles) {
-          setFavoriteVehicles(data.vehicles)
-        }
-      }
-
-      ;(window as any).alt.on('favorites:vehicles:response', handleVehicleFavoritesResponse)
-      ;(window as any).alt.on('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
-      
-      return () => {
-        ;(window as any).alt.off?.('favorites:vehicles:response', handleVehicleFavoritesResponse)
-        ;(window as any).alt.off?.('favorites:vehicles:updated', handleVehicleFavoritesUpdated)
-      }
-    }
-  }, [])
+    return has('vehicle', vehicleName)
+  }, [has])
   
   // Обработчик сообщений от клиентского модуля
   useEffect(() => {

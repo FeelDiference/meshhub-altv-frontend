@@ -50,7 +50,6 @@ export function FavoriteItem<T>({
   const bgColor = `bg-${config.color}-600/20`
   const hoverBgColor = `group-hover:bg-${config.color}-600/30`
   const hoverBorderColor = `hover:border-${config.color}-500/30`
-  const hoverTextColor = `group-hover:text-${config.color}-400`
   
   const handleStartEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -249,10 +248,6 @@ export function FavoriteItem<T>({
             </>
           ) : (
             <>
-              <div className={`text-xs text-gray-500 ${hoverTextColor} transition-colors`}>
-                {config.actionLabel}
-              </div>
-              
               {/* Кнопка HotKey */}
               {onSetHotkey && (
                 <button

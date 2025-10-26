@@ -296,24 +296,35 @@ function getSession(): SessionData | null {
     if (isAltVEnvironment()) {
       // В ALT:V - сессия будет восстановлена через событие
       // Используем временное хранилище или запрашиваем у клиента
-      console.log('🔍 Checking for ALT:V session...')
-
+      
       // Пробуем получить из временного хранилища (устанавливается событием восстановления)
       const tempSession = (window as any).__altv_temp_session
       if (tempSession) {
-        console.log('✅ Found temp session:', tempSession)
+        // Логируем только один раз при первом обращении к сессии
+        if (!(window as any).__session_logged) {
+          console.log('✅ Found temp session:', tempSession)
+          ;(window as any).__session_logged = true
+        }
         return tempSession
       }
 
       // Если нет временной сессии, запрашиваем у ALT:V клиента
-      console.log('🔍 No temp session, requesting from ALT:V...')
-      ;(window as any).alt.emit('auth:request-token')
+      // Логируем только один раз для избежания спама
+      if (!(window as any).__session_requested) {
+        console.log('🔍 Checking for ALT:V session...')
+        console.log('🔍 No temp session, requesting from ALT:V...')
+        ;(window as any).alt.emit('auth:request-token')
+        ;(window as any).__session_requested = true
+      }
 
       // Возвращаем null, сессия будет восстановлена через событие
       return null
     } else {
       // В браузере - из localStorage
-      console.log('💻 Browser environment, using localStorage')
+      // Логируем только при отладке
+      if ((window as any).__auth_debug) {
+        console.log('💻 Browser environment, using localStorage')
+      }
       const encryptedData = localStorage.getItem('auth_session')
       if (!encryptedData) return null
 

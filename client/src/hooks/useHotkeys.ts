@@ -121,6 +121,7 @@ export function useHotkeys(options: UseHotkeysOptions): UseHotkeysResult {
 
   /**
    * Установить HotKey
+   * НЕМЕДЛЕННАЯ СИНХРОНИЗАЦИЯ - hotkey работает сразу после настройки!
    */
   const setHotkey = useCallback(async (
     type: FavoriteType, 
@@ -128,16 +129,27 @@ export function useHotkeys(options: UseHotkeysOptions): UseHotkeysResult {
     key: string, 
     modifiers?: HotkeyBinding['modifiers']
   ) => {
+    // Сохраняем hotkey
     await favoritesService.setHotkey(type, itemId, key, modifiers)
+    
+    // СРАЗУ синхронизируем с Alt:V для немедленной работы!
     syncHotkeysWithAltV()
+    
+    console.log(`[useHotkeys] ✅ HotKey set and synced immediately: ${type}:${itemId} → ${key}`)
   }, [])
 
   /**
    * Удалить HotKey
+   * НЕМЕДЛЕННАЯ СИНХРОНИЗАЦИЯ - изменения применяются сразу!
    */
   const removeHotkey = useCallback(async (type: FavoriteType, itemId: string) => {
+    // Удаляем hotkey
     await favoritesService.removeHotkey(type, itemId)
+    
+    // СРАЗУ синхронизируем с Alt:V!
     syncHotkeysWithAltV()
+    
+    console.log(`[useHotkeys] ✅ HotKey removed and synced immediately: ${type}:${itemId}`)
   }, [])
 
   /**

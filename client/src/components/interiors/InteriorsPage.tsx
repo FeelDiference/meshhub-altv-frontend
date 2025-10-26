@@ -72,11 +72,18 @@ export function InteriorsPage() {
 
       const interiorsData = await getInteriors()
       setInteriors(interiorsData)
+      
+      console.log('📊 Loaded interiors from backend:', interiorsData.map(i => ({
+        id: i.id,
+        name: i.name,
+        displayName: (i as any).displayName || (i as any).display_name
+      })))
 
       // Получаем список всех установленных интерьеров с кэшем (БЫСТРО!)
       console.log('🔍 Получаем список установленных интерьеров...')
       const installedInteriorIds = await getInstalledInteriorsCached()
       console.log(`✅ Установлено интерьеров: ${installedInteriorIds.length}`)
+      console.log('📋 Установленные интерьеры (имена папок):', installedInteriorIds)
       
       // Создаем Set для быстрого поиска
       const installedSet = new Set(installedInteriorIds)
@@ -84,9 +91,33 @@ export function InteriorsPage() {
       // Устанавливаем статусы для всех интерьеров за одну итерацию
       const statuses = new Map<string, InteriorStatus>()
       for (const interior of interiorsData) {
-        statuses.set(interior.id, installedSet.has(interior.id) ? 'installed' : 'not_installed')
+        // Используем displayName для сравнения (соответствует имени папки)
+        const interiorName = (interior as any).displayName || (interior as any).display_name || interior.name
+        const isInstalled = installedSet.has(interiorName)
+        statuses.set(interior.id, isInstalled ? 'installed' : 'not_installed')
+        
+        // Детальное логирование для каждого интерьера
+        console.log(`[Interior] "${interiorName}" (name: "${interior.name}", ID: ${interior.id.substring(0, 8)}...) - ${isInstalled ? '✅ INSTALLED' : '❌ NOT INSTALLED'}`)/*  */
       }
       setInteriorStatuses(statuses)
+      
+      // Сортируем: установленные наверх
+      const sortedInteriors = [...interiorsData].sort((a, b) => {
+        const aStatus = statuses.get(a.id) || 'not_installed'
+        const bStatus = statuses.get(b.id) || 'not_installed'
+        
+        // Installed первыми
+        if (aStatus === 'installed' && bStatus !== 'installed') return -1
+        if (bStatus === 'installed' && aStatus !== 'installed') return 1
+        
+        // Для остальных - сортировка по названию
+        const aName = (a as any).displayName || (a as any).display_name || a.name
+        const bName = (b as any).displayName || (b as any).display_name || b.name
+        return aName.localeCompare(bName)
+      })
+      
+      setInteriors(sortedInteriors)
+      console.log(`🔄 Sorted: ${sortedInteriors.filter(i => statuses.get(i.id) === 'installed').length} installed on top`)
     } catch (err: any) {
       setError('Сервис временно недоступен. LOCAL вкладка работает автономно.')
       console.error('Ошибка загрузки интерьеров:', err)

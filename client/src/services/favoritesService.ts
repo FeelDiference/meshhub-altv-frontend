@@ -61,34 +61,45 @@ class FavoritesStorage implements IFavoritesService {
     // ВАЖНО: Начинаем с дефолтного состояния (гарантия что все поля есть)
     this.state = { ...INITIAL_STATE }
     
-    // 1. Пытаемся загрузить из нового единого хранилища
-    const loaded = await this.loadFromStorage()
+    // 1. ПРИОРИТЕТ: Загрузка из Alt:V LocalStorage (персистентное хранилище)
+    const loadedFromAltV = await this.loadFromAltV()
     
-    if (loaded) {
-      console.log('[FavoritesService] Loaded from unified storage')
-      // Merge с INITIAL_STATE для безопасности
+    if (loadedFromAltV) {
+      console.log('[FavoritesService] ✅ Loaded from Alt:V LocalStorage (persistent)')
       this.state = {
         ...INITIAL_STATE,
-        ...loaded
+        ...loadedFromAltV
       }
+      // Синхронизируем с браузерным localStorage для быстрого доступа
+      await this.saveToStorage()
     } else {
-      // 2. Если нет, запускаем миграцию старых данных
-      console.log('[FavoritesService] No unified storage found, checking for legacy data...')
-      const migrated = await this.migrateLegacyData()
+      // 2. Fallback: Загрузка из браузерного localStorage
+      const loaded = await this.loadFromStorage()
       
-      if (migrated) {
-        console.log('[FavoritesService] Migrated legacy data successfully')
-        // Merge с INITIAL_STATE для безопасности
+      if (loaded) {
+        console.log('[FavoritesService] Loaded from browser localStorage (fallback)')
         this.state = {
           ...INITIAL_STATE,
-          ...migrated
+          ...loaded
         }
-        await this.saveToStorage()
+        // Сохраняем в Alt:V для персистентности
+        await this.syncWithAltV()
+      } else {
+        // 3. Миграция старых данных
+        console.log('[FavoritesService] No storage found, checking for legacy data...')
+        const migrated = await this.migrateLegacyData()
+        
+        if (migrated) {
+          console.log('[FavoritesService] Migrated legacy data successfully')
+          this.state = {
+            ...INITIAL_STATE,
+            ...migrated
+          }
+          await this.saveToStorage()
+          await this.syncWithAltV()
+        }
       }
     }
-    
-    // 3. Синхронизация с Alt:V
-    await this.syncWithAltV()
     
     this.initialized = true
     console.log('[FavoritesService] Initialized with state:', this.state)
@@ -508,7 +519,44 @@ class FavoritesStorage implements IFavoritesService {
   // ========================================================================
 
   /**
-   * Загрузка из localStorage
+   * Загрузка из Alt:V LocalStorage (приоритетное, персистентное хранилище)
+   */
+  private async loadFromAltV(): Promise<FavoritesState | null> {
+    if (typeof window === 'undefined' || !('alt' in window)) {
+      console.log('[FavoritesService] Alt:V not available, skipping Alt:V load')
+      return null
+    }
+    
+    console.log('[FavoritesService] 🔄 Requesting favorites from Alt:V LocalStorage...')
+    
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.log('[FavoritesService] ⏱️ Alt:V load timeout, using fallback')
+        resolve(null)
+      }, 2000) // 2 секунды таймаут
+      
+      // Обработчик ответа от Alt:V
+      const handleResponse = (data: { favorites: FavoritesState | null }) => {
+        clearTimeout(timeout)
+        ;(window as any).alt.off('favorites:load:response', handleResponse)
+        
+        if (data.favorites) {
+          console.log('[FavoritesService] ✅ Received favorites from Alt:V:', data.favorites)
+          resolve(data.favorites)
+        } else {
+          console.log('[FavoritesService] No favorites in Alt:V LocalStorage')
+          resolve(null)
+        }
+      }
+      
+      // Регистрируем обработчик и запрашиваем данные
+      ;(window as any).alt.on('favorites:load:response', handleResponse)
+      ;(window as any).alt.emit('favorites:load:request')
+    })
+  }
+
+  /**
+   * Загрузка из localStorage (fallback, не персистентный)
    */
   private async loadFromStorage(): Promise<FavoritesState | null> {
     try {
@@ -547,7 +595,7 @@ class FavoritesStorage implements IFavoritesService {
   }
 
   /**
-   * Сохранение в localStorage
+   * Сохранение в localStorage (быстрый доступ) и Alt:V LocalStorage (персистентность)
    */
   private async saveToStorage(): Promise<void> {
     try {
@@ -557,8 +605,15 @@ class FavoritesStorage implements IFavoritesService {
         lastUpdated: Date.now()
       }
       
+      // 1. Сохраняем в браузерный localStorage для быстрого доступа
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-      console.log('[FavoritesService] Saved to localStorage')
+      console.log('[FavoritesService] 💾 Saved to browser localStorage')
+      
+      // 2. КРИТИЧНО: Сохраняем в Alt:V LocalStorage для персистентности
+      if (typeof window !== 'undefined' && 'alt' in window) {
+        ;(window as any).alt.emit('favorites:save:request', { favorites: this.state })
+        console.log('[FavoritesService] 💾 Sent to Alt:V LocalStorage for persistence')
+      }
     } catch (error) {
       console.error('[FavoritesService] Error saving to storage:', error)
     }

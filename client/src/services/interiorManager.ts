@@ -35,12 +35,14 @@ try {
  * Проверить, установлен ли интерьер
  */
 export async function checkInteriorExists(interior: InteriorResource): Promise<boolean> {
-  console.log(`🔍 Проверяем установку интерьера: ${(interior as any).display_name || interior.name}`)
+  // Используем displayName как уникальный идентификатор (соответствует имени папки)
+  const interiorName = (interior as any).displayName || (interior as any).display_name || interior.name
+  console.log(`🔍 Проверяем установку интерьера: ${interiorName}`)
   
   // Если ALT:V недоступен, проверяем localStorage
   if (!window.alt) {
     const installed = getInstalledInteriors()
-    return installed.includes(interior.id)
+    return installed.includes(interiorName)
   }
   
   // Запрашиваем у ALT:V клиента
@@ -49,7 +51,7 @@ export async function checkInteriorExists(interior: InteriorResource): Promise<b
       window.alt?.off?.('meshhub:interior:check:response', handler)
       // Fallback к localStorage при таймауте
       const installed = getInstalledInteriors()
-      resolve(installed.includes(interior.id))
+      resolve(installed.includes(interiorName))
     }, 5000)
     
     const handler = (response: { interiorName: string; exists: boolean; error?: string }) => {
@@ -59,7 +61,7 @@ export async function checkInteriorExists(interior: InteriorResource): Promise<b
       if (response.error) {
         console.error('❌ Ошибка проверки интерьера:', response.error)
         const installed = getInstalledInteriors()
-        resolve(installed.includes(interior.id))
+        resolve(installed.includes(interiorName))
       } else {
         resolve(response.exists)
       }
@@ -68,7 +70,7 @@ export async function checkInteriorExists(interior: InteriorResource): Promise<b
     window.alt?.on?.('meshhub:interior:check:response', handler)
     window.alt?.emit?.('meshhub:interior:check', {
       interiorId: interior.id,
-      interiorName: (interior as any).display_name || interior.name
+      interiorName: interiorName
     })
   })
 }
@@ -80,7 +82,9 @@ export async function downloadInteriorToLocal(
   interior: InteriorResource,
   token: string
 ): Promise<{ success: boolean; message: string }> {
-  console.log(`⬇️ Устанавливаем интерьер: ${(interior as any).display_name || interior.name}`)
+  // Используем displayName как уникальный идентификатор (соответствует имени папки)
+  const interiorName = (interior as any).displayName || (interior as any).display_name || interior.name
+  console.log(`⬇️ Устанавливаем интерьер: ${interiorName}`)
   
   if (!window.alt) {
     console.error('❌ ALT:V недоступен')
@@ -100,8 +104,8 @@ export async function downloadInteriorToLocal(
       if (response.success) {
         // Сохраняем в localStorage
         const installed = getInstalledInteriors()
-        if (!installed.includes(interior.id)) {
-          installed.push(interior.id)
+        if (!installed.includes(interiorName)) {
+          installed.push(interiorName)
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(installed))
         }
         
@@ -114,8 +118,8 @@ export async function downloadInteriorToLocal(
         // Обновляем кэш установленного списка
         try {
           const ids = installedCache?.ids || []
-          if (!ids.includes(interior.id)) {
-            const next = { ids: [...ids, interior.id], ts: Date.now() }
+          if (!ids.includes(interiorName)) {
+            const next = { ids: [...ids, interiorName], ts: Date.now() }
             installedCache = next
             localStorage.setItem(INSTALLED_CACHE_STORAGE_KEY, JSON.stringify(next))
           } else {
@@ -132,7 +136,7 @@ export async function downloadInteriorToLocal(
     window.alt?.on?.('meshhub:interior:download:response', handler)
     window.alt?.emit?.('meshhub:interior:download', {
       interiorId: interior.id,
-      interiorName: (interior as any).display_name || interior.name,
+      interiorName: interiorName,
       token: token
     })
   })
@@ -147,9 +151,10 @@ export function getInteriorStatus(interior: InteriorResource): InteriorStatus {
     return state.status
   }
   
-  // Проверяем localStorage
+  // Проверяем localStorage - используем displayName для сравнения (соответствует имени папки)
+  const interiorName = (interior as any).displayName || (interior as any).display_name || interior.name
   const installed = getInstalledInteriors()
-  return installed.includes(interior.id) ? 'installed' : 'not_installed'
+  return installed.includes(interiorName) ? 'installed' : 'not_installed'
 }
 
 /**
@@ -200,6 +205,7 @@ export async function getInstalledInteriorsFromClient(): Promise<string[]> {
         console.error('❌ Ошибка получения списка интерьеров:', response.error)
         resolve(getInstalledInteriors())
       } else {
+        console.log('[InteriorManager] 📡 Alt:V Server response - installed interiors:', response.interiors)
         resolve(response.interiors || [])
       }
     }
@@ -215,6 +221,7 @@ export async function getInstalledInteriorsFromClient(): Promise<string[]> {
 export async function getInstalledInteriorsCached(options?: { force?: boolean }): Promise<string[]> {
   const force = options?.force === true
   if (!force && installedCache && Date.now() - installedCache.ts < INSTALLED_CACHE_TTL_MS) {
+    console.log('[InteriorManager] 📦 Using cached installed interiors:', installedCache.ids)
     return installedCache.ids
   }
 
@@ -222,8 +229,11 @@ export async function getInstalledInteriorsCached(options?: { force?: boolean })
   let ids: string[] = []
   try {
     ids = await getInstalledInteriorsFromClient()
-  } catch {
+    console.log('[InteriorManager] 📥 Loaded from Alt:V Server:', ids)
+  } catch (err) {
+    console.warn('[InteriorManager] Failed to load from Alt:V, using localStorage:', err)
     ids = getInstalledInteriors()
+    console.log('[InteriorManager] 📂 Loaded from localStorage:', ids)
   }
 
   const next: InstalledCache = { ids, ts: Date.now() }

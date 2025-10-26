@@ -90,6 +90,7 @@ async function checkFileExistsInFolder(filePath: string): Promise<boolean> {
 
 /**
  * Скачивает автомобиль
+ * ВАЖНО: Использует ALT:V события если доступны, иначе fallback на браузерное скачивание
  */
 export async function downloadVehicleWithStatus(vehicle: VehicleResource): Promise<void> {
   console.log(`⬇️ Скачиваем автомобиль: ${vehicle.name}`)
@@ -98,8 +99,64 @@ export async function downloadVehicleWithStatus(vehicle: VehicleResource): Promi
     // Обновляем статус
     vehicleStates.set(vehicle.id, { status: 'checking' })
     
-    // Скачиваем через backend
-    await downloadVehicle(vehicle.id)
+    // Проверяем доступность ALT:V WebView
+    const isAltV = typeof window !== 'undefined' && 'alt' in window
+    
+    if (isAltV) {
+      // ALT:V режим - используем события для server-side скачивания
+      console.log(`[downloadVehicleWithStatus] ALT:V mode - using vehicle:download event`)
+      
+      // Получаем токен
+      const { getAccessToken } = await import('./auth')
+      const token = getAccessToken()
+      
+      if (!token) {
+        throw new Error('Токен авторизации не найден')
+      }
+      
+      // Создаем Promise для ожидания ответа от сервера
+      const downloadPromise = new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Timeout: сервер не ответил'))
+        }, 120000) // 2 минуты
+        
+        const handleDownloaded = (response: { 
+          success: boolean
+          vehicleId: string
+          vehicleName: string
+          message: string
+        }) => {
+          clearTimeout(timeout)
+          ;(window as any).alt.off('vehicle:downloaded', handleDownloaded)
+          
+          if (response.success && response.vehicleId === vehicle.id) {
+            console.log(`[downloadVehicleWithStatus] ✅ Vehicle downloaded: ${response.vehicleName}`)
+            resolve()
+          } else if (!response.success && response.vehicleId === vehicle.id) {
+            reject(new Error(response.message || 'Ошибка скачивания'))
+          }
+        }
+        
+        ;(window as any).alt.on('vehicle:downloaded', handleDownloaded)
+        
+        // Отправляем событие на сервер
+        ;(window as any).alt.emit('vehicle:download', {
+          vehicleId: vehicle.id,
+          vehicleName: vehicle.name,
+          token
+        })
+        
+        console.log(`[downloadVehicleWithStatus] 📤 Event sent: vehicle:download`)
+      })
+      
+      // Ждем ответа
+      await downloadPromise
+      
+    } else {
+      // Браузерный режим - используем прямое скачивание
+      console.log(`[downloadVehicleWithStatus] Browser mode - using direct download`)
+      await downloadVehicle(vehicle.id)
+    }
     
     // Обновляем статус на "скачан"
     const localPath = `${VEHICLE_CONFIG.downloadPath}${vehicle.name}${VEHICLE_CONFIG.extensions[0]}`
