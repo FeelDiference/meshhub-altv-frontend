@@ -151,6 +151,9 @@ export const VehiclesPage = () => {
   const [activeModel] = useState<string>('')
   const headerRef = React.useRef<HTMLDivElement>(null) // Ref для заголовка панелей
   
+  // Состояние для системы пресетов handling
+  const [currentHandlingValues, setCurrentHandlingValues] = useState<Record<string, number>>({})
+  
   // Адаптивный сдвиг от левого края: ширина меню + отступ
   // 15.6vw (меню) + 24px (отступ)
   const panelLeft = 'calc(15.6vw + 24px)'
@@ -256,6 +259,34 @@ export const VehiclesPage = () => {
     // По умолчанию показываем
     return true
   }, [activeTab])
+  
+  // Функция применения пресета handling параметров
+  // Применяет каждый параметр из пресета, вызывая updateHandling для каждого
+  const handlePresetLoad = useCallback((preset: Record<string, number>) => {
+    console.log('[VehiclesPage] Loading preset with', Object.keys(preset).length, 'parameters')
+    
+    // Применяем каждый параметр из пресета
+    Object.entries(preset).forEach(([param, value]) => {
+      updateHandling(param, value)
+      
+      // Также обновляем XML если возможно
+      const tag = paramToXmlTag[param]
+      if (tag) {
+        setHandlingMetaXml(prev => updateXmlNumericValue(prev, tag, value))
+      }
+    })
+    
+    // Обновляем текущие значения для отображения в UI
+    setCurrentHandlingValues(preset)
+    
+    toast.success('Пресет применён')
+  }, [updateHandling]) // Только updateHandling, handlingMetaXml убрал из зависимостей
+  
+  // Callback для получения текущих значений параметров из TuningSliders
+  // Вызывается при изменении любого параметра
+  const handleValuesChange = useCallback((values: Record<string, number>) => {
+    setCurrentHandlingValues(values)
+  }, []) // Пустой массив - функция никогда не меняется
   
   // Принудительно синхронизируем GTAV машины с клиентом при инициализации
   useEffect(() => {
@@ -1371,6 +1402,8 @@ export const VehiclesPage = () => {
                   currentXml={handlingMetaXml}
                   onFocusModeToggle={() => setFocusMode(focusMode === 'tuning' ? 'off' : 'tuning')}
                   focusMode={focusMode === 'tuning'}
+                  isVanillaVehicle={'isGTAV' in selectedVehicle && selectedVehicle.isGTAV}
+                  onValuesChange={handleValuesChange}
                 />
               </div>
           )}
@@ -1382,6 +1415,9 @@ export const VehiclesPage = () => {
                 xml={handlingMetaXml} 
                 onXmlChange={setHandlingMetaXml}
                 highlightedParam={highlightedXmlParam}
+                currentValues={currentHandlingValues}
+                onPresetLoad={handlePresetLoad}
+                disabled={!currentVehicle || !selectedVehicle || ![selectedVehicle.name, selectedVehicle.modelName].includes(currentVehicle.modelName)}
               />
             </div>
           )}

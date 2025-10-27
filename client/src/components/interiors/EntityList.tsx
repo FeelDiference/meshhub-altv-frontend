@@ -13,10 +13,22 @@ interface EntityListProps {
   ytypXml: string
   onHighlightEntity?: (archetypeName: string) => void
   interiorName?: string
+  entitySetMappings?: Record<string, string> // Маппинги hash_***** → realName
 }
 
-export function EntityList({ ytypXml, onHighlightEntity, interiorName }: EntityListProps) {
+export function EntityList({ ytypXml, onHighlightEntity, interiorName, entitySetMappings = {} }: EntityListProps) {
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set())
+  
+  /**
+   * Получить отображаемое имя entity set (с учетом маппинга)
+   */
+  const getEntitySetDisplayName = (name: string): string => {
+    // Если это хэш и есть маппинг - показываем реальное имя
+    if (name.startsWith('hash_') && entitySetMappings[name]) {
+      return entitySetMappings[name]
+    }
+    return name
+  }
   
   // Парсим entity и rooms из YTYP XML
   const entities = useMemo(() => {
@@ -331,6 +343,9 @@ export function EntityList({ ytypXml, onHighlightEntity, interiorName }: EntityL
             {entitySetsData.map((entitySet, setIndex) => {
               const setKey = `entityset-${setIndex}`
               const isSetExpanded = expandedRooms.has(setKey)
+              const displayName = getEntitySetDisplayName(entitySet.name)
+              const isHash = entitySet.name.startsWith('hash_')
+              const hasMapp = isHash && entitySetMappings[entitySet.name] !== undefined
               
               return (
                 <div
@@ -346,8 +361,14 @@ export function EntityList({ ytypXml, onHighlightEntity, interiorName }: EntityL
                       <Layers className="w-4 h-4 text-blue-400 flex-shrink-0" />
                       <div>
                         <div className="text-sm font-semibold text-blue-300">
-                          {entitySet.name}
+                          {displayName}
                         </div>
+                        {/* Показываем оригинальный хэш если есть маппинг */}
+                        {hasMapp && (
+                          <div className="text-xs text-gray-600 mt-0.5">
+                            {entitySet.name}
+                          </div>
+                        )}
                         <div className="text-xs text-blue-400">
                           {entitySet.entities.length} objects
                         </div>

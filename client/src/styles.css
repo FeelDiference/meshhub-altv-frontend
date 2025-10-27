@@ -72,6 +72,25 @@ html, body {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Кастомный scrollbar для dropdown с пресетами */
+.dropdown-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dropdown-scrollbar::-webkit-scrollbar-track {
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+.dropdown-scrollbar::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+.dropdown-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
 /* Запрет выделения для overlay элементов */
 /* Предотвращаем выделение текста и перетаскивание изображений в overlay элементах */
 .speedometer,

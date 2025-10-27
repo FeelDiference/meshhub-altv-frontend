@@ -17,7 +17,8 @@ import {
   Check,
   Edit2,
   Monitor,
-  MonitorOff
+  MonitorOff,
+  AlertTriangle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { InteriorResource, InteriorEditorMode } from '@/types/interior'
@@ -39,6 +40,7 @@ interface InteriorDetailsProps {
   defaultTimecycle?: string // Таймцикл из YTYP (из первой комнаты с таймциклом)
   liveEditVisible?: boolean
   onToggleLiveEdit?: () => void
+  entitySetValidationErrors?: Record<string, { error: string; expectedHash?: string }> // Ошибки валидации хэшей
 }
 
 export function InteriorDetails({ 
@@ -55,7 +57,8 @@ export function InteriorDetails({
   onSaveEntitySetMapping,
   defaultTimecycle,
   liveEditVisible = false,
-  onToggleLiveEdit
+  onToggleLiveEdit,
+  entitySetValidationErrors = {}
 }: InteriorDetailsProps) {
   
   // Загружаем список таймциклов
@@ -414,69 +417,118 @@ export function InteriorDetails({
               const isHash = name.startsWith('hash_')
               const hasMapp = entitySetMappings[name] !== undefined
               const isEditing = editingEntitySet === name
+              const validationError = entitySetValidationErrors[name] // Ошибка валидации хэша
+              
+              // Определяем нужна ли красная подсветка (хэш без маппинга = не работает)
+              const needsMapping = isHash && !hasMapp
               
               return (
-                <div
-                  key={name}
-                  className={`w-full flex items-center gap-2 p-2 rounded-lg text-xs transition-all border ${
-                    isActive
-                      ? 'bg-green-600/20 border-green-500/50'
-                      : 'bg-base-800/50 border-base-700 hover:bg-base-700'
-                  }`}
-                >
-                  {/* Блок с названием/редактированием */}
-                  <div className="flex-1 flex items-center justify-between">
-                    {isEditing ? (
-                      // Режим редактирования
-                      <input
-                        type="text"
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveEntitySetRename(name)
-                          } else if (e.key === 'Escape') {
-                            cancelEditingEntitySet()
-                          }
-                        }}
-                        onBlur={() => saveEntitySetRename(name)}
-                        autoFocus
-                        className="flex-1 px-2 py-1 bg-base-900 border border-blue-500/50 rounded text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        placeholder="Введите имя..."
-                      />
-                    ) : (
-                      // Обычный режим - кликабельная кнопка
-                      <button
-                        onClick={() => handleEntitySetToggle(name)}
-                        className="flex-1 flex items-center justify-between text-left"
-                      >
-                        <div className="truncate flex-1">
-                          <div className={isActive ? 'text-green-300' : 'text-gray-400'}>
-                            {displayName}
+                <div key={name} className="w-full flex flex-col gap-1">
+                  {/* Основной блок entity set */}
+                  <div
+                    className={`w-full flex items-center gap-2 p-2 rounded-lg text-xs transition-all border ${
+                      needsMapping
+                        ? 'bg-red-900/30 border-red-500/50' // Красная подсветка для немаппированных хэшей
+                        : isActive
+                        ? 'bg-green-600/20 border-green-500/50'
+                        : 'bg-base-800/50 border-base-700 hover:bg-base-700'
+                    }`}
+                  >
+                    {/* Блок с названием/редактированием */}
+                    <div className="flex-1 flex items-center justify-between">
+                      {isEditing ? (
+                        // Режим редактирования
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveEntitySetRename(name)
+                            } else if (e.key === 'Escape') {
+                              cancelEditingEntitySet()
+                            }
+                          }}
+                          onBlur={() => saveEntitySetRename(name)}
+                          autoFocus
+                          className="flex-1 px-2 py-1 bg-base-900 border border-blue-500/50 rounded text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="Введите имя..."
+                        />
+                      ) : (
+                        // Обычный режим - кликабельная кнопка
+                        <button
+                          onClick={() => handleEntitySetToggle(name)}
+                          className="flex-1 flex items-center justify-between text-left"
+                        >
+                          <div className="truncate flex-1">
+                            <div className={`flex items-center gap-1.5 ${
+                              needsMapping 
+                                ? 'text-red-400' // Красный текст для немаппированных хэшей
+                                : isActive 
+                                ? 'text-green-300' 
+                                : 'text-gray-400'
+                            }`}>
+                              {needsMapping && (
+                                <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                              )}
+                              <span className="truncate">{displayName}</span>
+                            </div>
+                            {isHash && hasMapp && (
+                              <div className="text-xs text-gray-600 truncate mt-0.5">{name}</div>
+                            )}
+                            {needsMapping && !validationError && (
+                              <div className="text-xs text-red-400/70 mt-0.5">Требуется маппинг для работы</div>
+                            )}
                           </div>
-                          {isHash && hasMapp && (
-                            <div className="text-xs text-gray-600 truncate mt-0.5">{name}</div>
+                          {isActive && (
+                            <Check className="w-3.5 h-3.5 text-green-400 ml-2" />
                           )}
-                        </div>
-                        {isActive && (
-                          <Check className="w-3.5 h-3.5 text-green-400 ml-2" />
-                        )}
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Кнопка переименования только для хэшей */}
+                    {isHash && onSaveEntitySetMapping && !isEditing && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startEditingEntitySet(name)
+                        }}
+                        className="p-1.5 rounded hover:bg-blue-600/20 border border-blue-500/50 text-blue-400 transition-all flex-shrink-0"
+                        title="Переименовать entity set"
+                      >
+                        <Edit2 className="w-3 h-3" />
                       </button>
                     )}
                   </div>
                   
-                  {/* Кнопка переименования только для хэшей */}
-                  {isHash && onSaveEntitySetMapping && !isEditing && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        startEditingEntitySet(name)
-                      }}
-                      className="p-1.5 rounded hover:bg-blue-600/20 border border-blue-500/50 text-blue-400 transition-all flex-shrink-0"
-                      title="Переименовать entity set"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                    </button>
+                  {/* Блок ошибки валидации хэша - показывается прямо под entity set */}
+                  {validationError && (
+                    <div className="w-full px-2 py-2 bg-red-950/50 border border-red-500/30 rounded text-xs">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 flex flex-col gap-1.5">
+                          <div className="font-semibold text-red-400">
+                            ❌ Неправильный хэш!
+                          </div>
+                          <div className="text-gray-300">
+                            Хэш <span className="font-mono text-red-300">{name}</span> не соответствует имени{' '}
+                            <span className="font-mono text-blue-300">"{editingValue}"</span>
+                          </div>
+                          {validationError.expectedHash && (
+                            <div className="text-gray-400">
+                              Ожидаемый хэш: <span className="font-mono text-green-300">{validationError.expectedHash}</span>
+                            </div>
+                          )}
+                          <div className="text-orange-300 mt-0.5">
+                            ⚠️ С неправильным хэшем entity set не включится!
+                          </div>
+                          <div className="text-gray-500 mt-0.5 text-[10px]">
+                            Проверьте имя или используйте команду <span className="font-mono">testhash</span> в консоли сервера
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               )
@@ -499,6 +551,7 @@ export function InteriorDetails({
 }
 
 export default InteriorDetails
+
 
 
 

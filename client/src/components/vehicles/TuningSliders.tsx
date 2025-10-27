@@ -169,7 +169,7 @@ function parseHandlingXml(xml: string): Record<string, number> {
   return values
 }
 
-export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean }) {
+export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initialValues, vehicleKey, currentXml, onFocusModeToggle, focusMode, isVanillaVehicle = false, onValuesChange }: { onChange: (parameter: string, value: number) => void; onReset?: () => void; onXmlPatch?: (parameter: string, value: number) => void; disabled?: boolean; initialValues?: string; vehicleKey?: string; currentXml?: string; onFocusModeToggle?: () => void; focusMode?: boolean; isVanillaVehicle?: boolean; onValuesChange?: (values: Record<string, number>) => void }) {
   const [values, setValues] = React.useState<Record<string, number>>({})
   const [defaults, setDefaults] = React.useState<Record<string, number>>({})
   const lastVehicleKey = React.useRef<string | null>(null)
@@ -349,6 +349,13 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
     }
   }, [initialValues, vehicleKey])
 
+  // Уведомляем родительский компонент об изменении значений (для системы пресетов)
+  React.useEffect(() => {
+    if (onValuesChange && Object.keys(values).length > 0) {
+      onValuesChange(values)
+    }
+  }, [values, onValuesChange])
+
   const update = (key: string, value: number) => {
     setValues(prev => ({ ...prev, [key]: value }))
     onChange(key, value)
@@ -402,7 +409,8 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
         const eventData = {
           vehicleName: vehicleKey,
           xmlContent: currentXml,
-          autoRestart: false // ОТКЛЮЧЕНО: Auto Restart не работает из-за кэша RPF на сервере
+          autoRestart: false, // ОТКЛЮЧЕНО: Auto Restart не работает из-за кэша RPF на сервере
+          isVanilla: isVanillaVehicle // Флаг для ванильных машин - не сохранять в DLC
         }
         
         console.log('[TuningSliders] 🔍 Checking alt availability...')
@@ -743,16 +751,18 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
             <span>{isUploading ? 'Отправка...' : 'Сохранить'}</span>
           </button>
           
-          {/* Кнопка отправки (доступна только если есть локальные изменения) */}
-          <button
-            onClick={handleUpload}
-            disabled={disabled || isUploading || (!hasLocalEdits && !isLocallyEdited)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            title={(!hasLocalEdits && !isLocallyEdited) ? 'Доступно только при наличии локальных изменений (статус L)' : 'Отправить ресурс на сервер'}
-          >
-            <Upload className={`w-3.5 h-3.5 ${isUploading ? 'animate-spin' : ''}`} />
-            <span>Отправить</span>
-          </button>
+          {/* Кнопка отправки (доступна только если есть локальные изменения, скрыта для ванильных машин) */}
+          {!isVanillaVehicle && (
+            <button
+              onClick={handleUpload}
+              disabled={disabled || isUploading || (!hasLocalEdits && !isLocallyEdited)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              title={(!hasLocalEdits && !isLocallyEdited) ? 'Доступно только при наличии локальных изменений (статус L)' : 'Отправить ресурс на сервер'}
+            >
+              <Upload className={`w-3.5 h-3.5 ${isUploading ? 'animate-spin' : ''}`} />
+              <span>Отправить</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -860,7 +870,7 @@ export function TuningSliders({ onChange, onReset, onXmlPatch, disabled, initial
               {isUnsupported && (
                 <div className="text-[10px] text-amber-500/70 mt-0.5 flex items-center gap-1">
                   <RefreshCw className="w-2.5 h-2.5" />
-                  <span>Требует перезагрузку сервера</span>
+                  <span>{isVanillaVehicle ? 'Не поддерживается изменение' : 'Требует перезагрузку сервера'}</span>
                 </div>
               )}
             </div>

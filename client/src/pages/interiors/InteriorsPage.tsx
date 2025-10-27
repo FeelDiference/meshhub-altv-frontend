@@ -73,6 +73,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
   const [ytypLoading, setYtypLoading] = useState(false)
   const [entitySets, setEntitySets] = useState<string[]>([])
   const [entitySetMappings, setEntitySetMappings] = useState<Record<string, string>>({}) // hash -> realName
+  const [entitySetValidationErrors, setEntitySetValidationErrors] = useState<Record<string, { error: string; expectedHash?: string }>>({}) // Ошибки валидации хэшей
   
   // Текущий интерьер (определяется по координатам игрока)
   const [currentInterior, setCurrentInterior] = useState<{
@@ -194,6 +195,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
         ytypXml?: string
         compressed?: boolean
         entitySets?: string[]
+        savedMappings?: Record<string, string> // Добавляем поддержку сохраненных маппингов
         error?: string
       }) => {
         console.log('[InteriorsPage] 📥 YTYP response:', {
@@ -201,7 +203,8 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
           interiorName: data.interiorName,
           compressed: data.compressed,
           xmlLength: data.ytypXml?.length,
-          entitySetsCount: data.entitySets?.length
+          entitySetsCount: data.entitySets?.length,
+          savedMappingsCount: data.savedMappings ? Object.keys(data.savedMappings).length : 0
         })
         
         setYtypLoading(false)
@@ -224,6 +227,12 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
           }
           
           setYtypXml(xml)
+          
+          // Применяем сохраненные маппинги из LocalStorage клиента
+          if (data.savedMappings && Object.keys(data.savedMappings).length > 0) {
+            console.log('[InteriorsPage] ✅ Applying saved entity set mappings from LocalStorage:', data.savedMappings)
+            setEntitySetMappings(data.savedMappings)
+          }
           
           // Парсим Entity Sets из XML напрямую
           const parsedEntitySets = parseYtypEntitySets(xml)
@@ -289,23 +298,71 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
         realName: string
         error?: string
       }) => {
+        console.log('[InteriorsPage] 📥 handleMappingSetResponse called with:', data)
+        
         if (data.success) {
           console.log('[InteriorsPage] ✅ Mapping saved:', data.hash, '->', data.realName)
-          setEntitySetMappings(prev => ({
-            ...prev,
-            [data.hash]: data.realName
-          }))
+          console.log('[InteriorsPage] 📦 Current entitySetMappings before update:', entitySetMappings)
+          
+          setEntitySetMappings(prev => {
+            const updated = {
+              ...prev,
+              [data.hash]: data.realName
+            }
+            console.log('[InteriorsPage] 📦 Updated entitySetMappings:', updated)
+            return updated
+          })
+          
+          // Очищаем ошибку валидации если она была
+          setEntitySetValidationErrors(prev => {
+            const updated = { ...prev }
+            delete updated[data.hash]
+            return updated
+          })
+          
           toast.success(`Entity set переименован: ${data.realName}`)
         } else {
           console.error('[InteriorsPage] ❌ Failed to save mapping:', data.error)
-          toast.error('Ошибка сохранения маппинга')
+          
+          // Проверяем если это ошибка валидации хэша
+          if (data.error && data.error.includes('Hash verification failed')) {
+            // Извлекаем правильный хэш из сообщения об ошибке (если есть)
+            const expectedHashMatch = data.error.match(/should be (hash_[A-F0-9]{8})/)
+            const expectedHash = expectedHashMatch ? expectedHashMatch[1] : null
+            
+            // Сохраняем ошибку для отображения прямо под entity set
+            setEntitySetValidationErrors(prev => ({
+              ...prev,
+              [data.hash]: {
+                error: data.error || 'Hash verification failed',
+                expectedHash: expectedHash || undefined
+              }
+            }))
+            
+            // Короткий toast для уведомления
+            toast.error('Неправильный хэш! Смотрите подробности под entity set', { duration: 3000 })
+          } else {
+            // Общая ошибка
+            toast.error(
+              <div className="flex flex-col gap-1">
+                <div className="font-semibold">Ошибка сохранения маппинга</div>
+                {data.error && (
+                  <div className="text-xs text-gray-400">{data.error}</div>
+                )}
+              </div>,
+              { duration: 5000 }
+            )
+          }
         }
       }
       
       ;(window as any).alt.on('meshhub:entityset:mapping:get:response', handleMappingResponse)
       ;(window as any).alt.on('meshhub:entityset:mapping:set:response', handleMappingSetResponse)
       
+      console.log('[InteriorsPage] ✅ Entity set mapping event handlers registered')
+      
       return () => {
+        console.log('[InteriorsPage] 🗑️ Unregistering entity set mapping event handlers')
         ;(window as any).alt.off?.('meshhub:entityset:mapping:get:response', handleMappingResponse)
         ;(window as any).alt.off?.('meshhub:entityset:mapping:set:response', handleMappingSetResponse)
       }
@@ -1013,6 +1070,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
                     defaultTimecycle={defaultTimecycle}
                     liveEditVisible={liveEditVisible}
                     onToggleLiveEdit={handleToggleLiveEdit}
+                    entitySetValidationErrors={entitySetValidationErrors}
                   />
                 </div>
               )}
@@ -1055,6 +1113,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
                       toast.success(`Подсвечено: ${archetypeName}`)
                     }}
                     interiorName={selectedInterior.name}
+                    entitySetMappings={entitySetMappings}
                   />
                 </div>
               )}
