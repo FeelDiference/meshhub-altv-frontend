@@ -19,7 +19,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { InteriorResource, InteriorEditorMode } from '@/types/interior'
-import { MOCK_TIMECYCLES } from '@/data/interior-mock'
+import { useTimecycles } from '@/hooks/useTimecycles'
+import { TimecycleSelector } from './TimecycleSelector'
 
 interface InteriorDetailsProps {
   interior: InteriorResource
@@ -33,24 +34,29 @@ interface InteriorDetailsProps {
   entitySets?: string[] // Реальные Entity Sets из YTYP
   entitySetMappings?: Record<string, string> // Маппинг хэшей к именам
   onSaveEntitySetMapping?: (hash: string, realName: string) => void
+  defaultTimecycle?: string // Таймцикл из YTYP (из первой комнаты с таймциклом)
 }
 
 export function InteriorDetails({ 
   interior, 
   editorMode,
   onEditorModeChange,
-  onFocusModeToggle, 
+  onFocusModeToggle,
   focusMode = false,
   currentInteriorId,
   portalsVisible = false,
   onTogglePortals,
   entitySets: externalEntitySets = [],
   entitySetMappings = {},
-  onSaveEntitySetMapping
+  onSaveEntitySetMapping,
+  defaultTimecycle
 }: InteriorDetailsProps) {
   
+  // Загружаем список таймциклов
+  const { timecycles, loading: timecyclesLoading } = useTimecycles()
+  
   // State для Timecycle и Entity Sets
-  const [selectedTimecycle, setSelectedTimecycle] = React.useState<string>(MOCK_TIMECYCLES[0])
+  const [selectedTimecycle, setSelectedTimecycle] = React.useState<string>('')
   const [timecycleSearch, setTimecycleSearch] = React.useState<string>('')
   const [entitySetSearch, setEntitySetSearch] = React.useState<string>('')
   const [activeEntitySets, setActiveEntitySets] = React.useState<Set<string>>(new Set())
@@ -64,12 +70,7 @@ export function InteriorDetails({
     return externalEntitySets
   }, [externalEntitySets])
   
-  // Фильтрация timecycles по поиску
-  const filteredTimecycles = React.useMemo(() => {
-    if (!timecycleSearch) return MOCK_TIMECYCLES
-    const search = timecycleSearch.toLowerCase()
-    return MOCK_TIMECYCLES.filter(tc => tc.toLowerCase().includes(search))
-  }, [timecycleSearch])
+  // Фильтрация теперь внутри TimecycleSelector (оптимизировано)
   
   // Фильтрация entity sets по поиску
   const filteredEntitySets = React.useMemo(() => {
@@ -93,17 +94,36 @@ export function InteriorDetails({
   /**
    * Сменить Timecycle
    */
-  const handleTimecycleChange = (timecycle: string) => {
-    setSelectedTimecycle(timecycle)
+  const handleTimecycleChange = (timecycleName: string) => {
+    console.log('[InteriorDetails] 🎨 Timecycle change:', { timecycleName, currentInteriorId })
+    setSelectedTimecycle(timecycleName)
+    
+    if (!timecycleName) {
+      // Пустое значение = очистка таймцикла
+      if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+        const clearData = { interiorId: currentInteriorId }
+        console.log('[InteriorDetails] 🧹 Clearing timecycle:', clearData)
+        ;(window as any).alt.emit('interior:timecycle:clear', clearData)
+        toast.success('Таймцикл сброшен')
+      }
+      return
+    }
     
     if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
-      ;(window as any).alt.emit('interior:timecycle:set', {
+      const setData = {
         interiorId: currentInteriorId,
-        timecycleName: timecycle
-      })
-      toast.success(`Timecycle: ${timecycle}`)
+        timecycleName: timecycleName
+      }
+      console.log('[InteriorDetails] ✅ Setting timecycle:', setData)
+      ;(window as any).alt.emit('interior:timecycle:set', setData)
+      
+      // Находим информацию о таймцикле
+      const tcInfo = timecycles.find(tc => tc.Name === timecycleName)
+      const info = tcInfo ? `${tcInfo.Name} (${tcInfo.ModificationsCount} params)` : timecycleName
+      
+      toast.success(`Timecycle: ${info}`)
     } else {
-      toast(`Timecycle: ${timecycle} (мокап)`, { icon: '☀️' })
+      toast(`Timecycle: ${timecycleName} (мокап)`, { icon: '☀️' })
     }
   }
   
@@ -321,41 +341,24 @@ export function InteriorDetails({
         </button>
       </div>
       
-      {/* Timecycle Selection with Search */}
-      <div className="space-y-2 pt-4 border-t border-base-700">
+      {/* Timecycle Selection with Search - OPTIMIZED */}
+      <div className="space-y-2 pt-4 pb-4 border-t border-base-700">
         <div className="text-xs font-medium text-gray-400 mb-2 flex items-center space-x-2">
           <Sun className="w-3.5 h-3.5 text-yellow-400" />
           <span>Timecycle (освещение):</span>
         </div>
         
-        {/* Поиск timecycle */}
-        <input
-          type="text"
-          placeholder="Поиск timecycle..."
-          value={timecycleSearch}
-          onChange={(e) => setTimecycleSearch(e.target.value)}
-          className="w-full px-2 py-1.5 bg-base-800 border border-base-700 rounded text-white text-xs placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/50 hover:border-base-600 transition-all"
-        />
-        
-        {/* Dropdown с фильтрацией */}
-        <select
-          value={selectedTimecycle}
-          onChange={(e) => handleTimecycleChange(e.target.value)}
-          className="w-full px-3 py-2 bg-base-800 border border-base-700 rounded-lg text-white text-xs focus:outline-none focus:ring-2 focus:ring-yellow-500/50 hover:border-base-600 transition-all"
-        >
-          {filteredTimecycles.length > 0 ? (
-            filteredTimecycles.map(tc => (
-              <option key={tc} value={tc}>{tc}</option>
-            ))
-          ) : (
-            <option disabled>Не найдено</option>
-          )}
-        </select>
-        
-        {timecycleSearch && (
-          <div className="text-xs text-gray-500">
-            Найдено: {filteredTimecycles.length} из {MOCK_TIMECYCLES.length}
-          </div>
+        {timecyclesLoading ? (
+          <div className="text-xs text-gray-400 py-2">Загрузка таймциклов...</div>
+        ) : (
+          <TimecycleSelector
+            timecycles={timecycles}
+            selectedTimecycle={selectedTimecycle}
+            onSelect={handleTimecycleChange}
+            searchTerm={timecycleSearch}
+            onSearchChange={setTimecycleSearch}
+            defaultTimecycle={defaultTimecycle}
+          />
         )}
       </div>
       
@@ -473,4 +476,7 @@ export function InteriorDetails({
 }
 
 export default InteriorDetails
+
+
+
 

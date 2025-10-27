@@ -102,6 +102,8 @@ export interface YtypRoom {
   attachedObjects: number[] // Индексы entities
   bbMin?: Vec3
   bbMax?: Vec3
+  timecycleName?: string // Таймцикл комнаты
+  secondaryTimecycleName?: string // Вторичный таймцикл
 }
 
 export interface YtypPortal {
@@ -118,7 +120,14 @@ export interface InteriorEntitySet {
   entities: YtypEntity[]
 }
 
-
+/**
+ * Timecycle Modifier из GTA V
+ */
+export interface TimecycleModifier {
+  Name: string
+  DlcName: string
+  ModificationsCount: number
+}
 
 export interface YtypEntity {
   archetypeName: string
@@ -147,6 +156,8 @@ export interface YtypRoom {
   attachedObjects: number[] // Индексы entities
   bbMin?: Vec3
   bbMax?: Vec3
+  timecycleName?: string // Таймцикл комнаты
+  secondaryTimecycleName?: string // Вторичный таймцикл
 }
 
 export interface YtypPortal {

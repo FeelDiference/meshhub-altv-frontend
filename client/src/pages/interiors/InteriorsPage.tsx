@@ -83,6 +83,9 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
   // Порталы (мокап toggle)
   const [portalsVisible, setPortalsVisible] = useState(false)
   
+  // Таймцикл из YTYP (первая комната с таймциклом)
+  const [defaultTimecycle, setDefaultTimecycle] = useState<string | undefined>(undefined)
+  
   // Ref для заголовка панелей
   const headerRef = React.useRef<HTMLDivElement>(null)
   
@@ -222,6 +225,16 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
           // Парсим Entity Sets из XML напрямую
           const parsedEntitySets = parseYtypEntitySets(xml)
           setEntitySets(parsedEntitySets)
+          
+          // Парсим комнаты и извлекаем таймцикл
+          const parsedRooms = parseYtypRooms(xml)
+          const roomWithTimecycle = parsedRooms.find(room => room.timecycleName)
+          if (roomWithTimecycle?.timecycleName) {
+            console.log('[InteriorsPage] 🎨 Found default timecycle:', roomWithTimecycle.timecycleName, 'in room:', roomWithTimecycle.name)
+            setDefaultTimecycle(roomWithTimecycle.timecycleName)
+          } else {
+            setDefaultTimecycle(undefined)
+          }
           
           if (parsedEntitySets.length > 0) {
             console.log('[InteriorsPage] 📦 Entity Sets parsed from XML:', parsedEntitySets)
@@ -949,6 +962,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
                     entitySets={entitySets}
                     entitySetMappings={entitySetMappings}
                     onSaveEntitySetMapping={saveEntitySetMapping}
+                    defaultTimecycle={defaultTimecycle}
                   />
                 </div>
               )}
@@ -1021,6 +1035,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
 }
 
 export default InteriorsPage
+
 
 
 

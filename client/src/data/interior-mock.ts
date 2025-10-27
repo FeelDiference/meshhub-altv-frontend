@@ -312,6 +312,8 @@ export function parseYtypRooms(ytypXml: string) {
       const attachedEl = item.querySelector('attachedObjects')
       const bbMinEl = item.querySelector('bbMin')
       const bbMaxEl = item.querySelector('bbMax')
+      const timecycleEl = item.querySelector('timecycleName')
+      const secondaryTimecycleEl = item.querySelector('secondaryTimecycleName')
       
       // Парсим индексы объектов
       const indices: number[] = []
@@ -335,7 +337,9 @@ export function parseYtypRooms(ytypXml: string) {
           x: parseFloat(bbMaxEl.getAttribute('x') || '0'),
           y: parseFloat(bbMaxEl.getAttribute('y') || '0'),
           z: parseFloat(bbMaxEl.getAttribute('z') || '0')
-        } : undefined
+        } : undefined,
+        timecycleName: timecycleEl?.textContent?.trim() || undefined,
+        secondaryTimecycleName: secondaryTimecycleEl?.textContent?.trim() || undefined
       })
     })
   } catch (error) {
@@ -396,13 +400,13 @@ export function parseYtypPortals(ytypXml: string) {
       
       // Добавляем портал только если есть 4 угла (прямоугольник)
       if (corners.length === 4) {
-        portals.push({
-          roomFrom: roomFromEl ? parseInt(roomFromEl.getAttribute('value') || '0') : 0,
-          roomTo: roomToEl ? parseInt(roomToEl.getAttribute('value') || '0') : 0,
-          attachedObjects: indices,
-          flags: flagsEl ? parseInt(flagsEl.getAttribute('value') || '0') : undefined,
-          corners: corners
-        })
+      portals.push({
+        roomFrom: roomFromEl ? parseInt(roomFromEl.getAttribute('value') || '0') : 0,
+        roomTo: roomToEl ? parseInt(roomToEl.getAttribute('value') || '0') : 0,
+        attachedObjects: indices,
+        flags: flagsEl ? parseInt(flagsEl.getAttribute('value') || '0') : undefined,
+        corners: corners
+      })
       }
     })
   } catch (error) {
@@ -649,4 +653,6 @@ export const MOCK_PORTALS = [
     flags: 0
   }
 ]
+
+
 
