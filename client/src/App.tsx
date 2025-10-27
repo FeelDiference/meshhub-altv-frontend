@@ -335,6 +335,35 @@ function App() {
   // ALT:V интеграция
   const { closePanel, isAvailable: altvAvailable } = useALTV()
 
+  // Обработка закрытия панели - снятие фокуса с активных элементов
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window) {
+      const handlePanelClosed = () => {
+        console.log('[App] 🔒 Panel closed - removing focus from all elements')
+        
+        // Принудительно снимаем фокус с активного элемента
+        if (document.activeElement && document.activeElement !== document.body) {
+          (document.activeElement as HTMLElement).blur()
+          console.log('[App] ✅ Blur called on active element:', document.activeElement)
+        }
+        
+        // Фокусируемся на body чтобы убрать фокус со всех элементов формы
+        document.body.focus()
+        
+        // Сбрасываем focusMode
+        setFocusMode('off')
+        ;(window as any).__focusMode = 'off'
+        window.dispatchEvent(new CustomEvent('focusModeChanged', { detail: { mode: 'off' } }))
+      }
+      
+      ;(window as any).alt.on('altv:panel:closed', handlePanelClosed)
+      
+      return () => {
+        ;(window as any).alt.off?.('altv:panel:closed', handlePanelClosed)
+      }
+    }
+  }, [])
+  
   // Обработка нажатий ESC для закрытия панели
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

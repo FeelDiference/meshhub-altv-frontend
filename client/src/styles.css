@@ -72,6 +72,22 @@ html, body {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Запрет выделения для overlay элементов */
+/* Предотвращаем выделение текста и перетаскивание изображений в overlay элементах */
+.speedometer,
+.race-overlay,
+[class*="fixed"] img,
+[class*="fixed"] > div {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+}
+
 /* Анимации */
 @keyframes fadeIn {
   from { opacity: 0; }

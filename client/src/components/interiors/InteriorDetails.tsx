@@ -15,7 +15,9 @@ import {
   Sun,
   Package,
   Check,
-  Edit2
+  Edit2,
+  Monitor,
+  MonitorOff
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { InteriorResource, InteriorEditorMode } from '@/types/interior'
@@ -35,6 +37,8 @@ interface InteriorDetailsProps {
   entitySetMappings?: Record<string, string> // Маппинг хэшей к именам
   onSaveEntitySetMapping?: (hash: string, realName: string) => void
   defaultTimecycle?: string // Таймцикл из YTYP (из первой комнаты с таймциклом)
+  liveEditVisible?: boolean
+  onToggleLiveEdit?: () => void
 }
 
 export function InteriorDetails({ 
@@ -49,7 +53,9 @@ export function InteriorDetails({
   entitySets: externalEntitySets = [],
   entitySetMappings = {},
   onSaveEntitySetMapping,
-  defaultTimecycle
+  defaultTimecycle,
+  liveEditVisible = false,
+  onToggleLiveEdit
 }: InteriorDetailsProps) {
   
   // Загружаем список таймциклов
@@ -210,7 +216,9 @@ export function InteriorDetails({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <Building2 className="w-5 h-5 text-green-400" />
-          <div className="text-sm font-semibold text-white">Детали интерьера</div>
+          <div className="text-sm font-semibold text-white">
+            {interior.displayName || interior.name}
+          </div>
         </div>
         {onFocusModeToggle && (
           <button
@@ -234,33 +242,14 @@ export function InteriorDetails({
       </div>
       
       {/* Информация об интерьере */}
-      <div className="space-y-3 mb-4 p-3 bg-base-800/50 rounded-lg border border-base-700">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-400">Название:</span>
-          <span className="text-sm text-white font-medium truncate ml-2">
-            {interior.displayName || interior.name}
-          </span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-400">Локаций:</span>
-          <span className="text-sm text-green-400">{interior.interiorCount}</span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-400">Размер:</span>
-          <span className="text-sm text-blue-400">
-            {(interior.size / 1024 / 1024).toFixed(1)} MB
-          </span>
-        </div>
-        
-        {currentInteriorId !== undefined && (
+      {currentInteriorId !== undefined && (
+        <div className="mb-4 p-3 bg-base-800/50 rounded-lg border border-base-700">
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-400">Interior ID:</span>
             <span className="text-sm text-purple-400">{currentInteriorId}</span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       
       {/* Переключатель режима редактора */}
       <div className="space-y-2 mb-4">
@@ -309,13 +298,13 @@ export function InteriorDetails({
         </button>
       </div>
       
-      {/* Toggle Portals */}
+      {/* Diagnostics Section */}
       <div className="space-y-2 pt-4 border-t border-base-700">
-        <div className="text-xs font-medium text-gray-400 mb-2">Порталы:</div>
+        <div className="text-xs font-medium text-gray-400 mb-2">Диагностика:</div>
         
         <button
           onClick={onTogglePortals}
-          className={`w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-medium transition-all border ${
+          className={`w-full flex items-center justify-between p-3.5 rounded-lg text-sm font-medium transition-all border ${
             portalsVisible
               ? 'bg-green-600/20 border-green-500/50 text-green-300'
               : 'bg-base-800/50 border-base-700 text-gray-300 hover:bg-base-700'
@@ -323,11 +312,11 @@ export function InteriorDetails({
         >
           <div className="flex items-center space-x-2">
             {portalsVisible ? (
-              <Eye className="w-4 h-4 text-green-400" />
+              <Eye className="w-5 h-5 text-green-400" />
             ) : (
-              <EyeOff className="w-4 h-4 text-gray-400" />
+              <EyeOff className="w-5 h-5 text-gray-400" />
             )}
-            <span>Показать в игре</span>
+            <span>Показать порталы</span>
           </div>
           <div className={`
             relative inline-flex h-4 w-8 items-center rounded-full transition-colors flex-shrink-0
@@ -339,6 +328,40 @@ export function InteriorDetails({
             `} />
           </div>
         </button>
+        
+        {/* Separator with spacing */}
+        <div className="h-px bg-base-700 mt-3"></div>
+        
+        {/* Live Debug Button */}
+        <button
+          onClick={onToggleLiveEdit}
+          className={`w-full flex items-center justify-between p-3.5 rounded-lg text-sm font-medium transition-all border ${
+            liveEditVisible
+              ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-300'
+              : 'bg-base-800/50 border-base-700 text-gray-300 hover:bg-base-700'
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            {liveEditVisible ? (
+              <Monitor className="w-5 h-5 text-cyan-400" />
+            ) : (
+              <MonitorOff className="w-5 h-5 text-gray-400" />
+            )}
+            <span>Live Debug</span>
+          </div>
+          <div className={`
+            relative inline-flex h-4 w-8 items-center rounded-full transition-colors flex-shrink-0
+            ${liveEditVisible ? 'bg-cyan-500' : 'bg-gray-600'}
+          `}>
+            <span className={`
+              inline-block h-3 w-3 transform rounded-full bg-white transition-transform
+              ${liveEditVisible ? 'translate-x-4' : 'translate-x-0.5'}
+            `} />
+          </div>
+        </button>
+        
+        {/* Separator after Live Debug button */}
+        <div className="h-px bg-base-700 mt-3"></div>
       </div>
       
       {/* Timecycle Selection with Search - OPTIMIZED */}

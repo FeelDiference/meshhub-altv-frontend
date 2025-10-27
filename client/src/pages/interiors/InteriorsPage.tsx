@@ -83,6 +83,9 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
   // Порталы (мокап toggle)
   const [portalsVisible, setPortalsVisible] = useState(false)
   
+  // Live Edit visibility
+  const [liveEditVisible, setLiveEditVisible] = useState(false)
+  
   // Таймцикл из YTYP (первая комната с таймциклом)
   const [defaultTimecycle, setDefaultTimecycle] = useState<string | undefined>(undefined)
   
@@ -456,6 +459,51 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
       toast(newState ? 'Порталы включены (мокап)' : 'Порталы выключены (мокап)', { icon: '👁️' })
     }
   }
+
+  // ============================================================================
+  // Toggle Live Edit
+  // ============================================================================
+  
+  const handleToggleLiveEdit = () => {
+    setLiveEditVisible(prev => {
+      const newValue = !prev
+      
+      // Отправляем событие в Alt:V для показа/скрытия webview
+      if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+        if (newValue) {
+          // Включаем Live Debug - Alt:V клиент сам определит origin через нативку
+          ;(window as any).alt.emit('interior:liveedit:enable', {
+            interiorId: currentInterior?.interiorId
+          })
+          toast.success('Live Debug включен')
+        } else {
+          // Выключаем Live Debug - скрываем webview и останавливаем отправку данных
+          ;(window as any).alt.emit('interior:liveedit:disable')
+          toast.success('Live Debug выключен')
+        }
+      } else {
+        toast(newValue ? 'Live Debug включен (мокап)' : 'Live Debug выключен (мокап)', { icon: '📊' })
+      }
+      
+      return newValue
+    })
+  }
+  
+  // Слушаем событие закрытия Live Edit от webview
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      const handleLiveEditClosed = () => {
+        console.log('[InteriorsPage] Live Edit closed from webview')
+        setLiveEditVisible(false)
+      }
+      
+      ;(window as any).alt.on('interior:liveedit:closed', handleLiveEditClosed)
+      
+      return () => {
+        ;(window as any).alt.off?.('interior:liveedit:closed', handleLiveEditClosed)
+      }
+    }
+  }, [])
 
   /**
    * Переключить избранное для локации
@@ -963,6 +1011,8 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
                     entitySetMappings={entitySetMappings}
                     onSaveEntitySetMapping={saveEntitySetMapping}
                     defaultTimecycle={defaultTimecycle}
+                    liveEditVisible={liveEditVisible}
+                    onToggleLiveEdit={handleToggleLiveEdit}
                   />
                 </div>
               )}
@@ -1035,6 +1085,7 @@ export function InteriorsPage({ currentInteriorData: propsCurrentInteriorData }:
 }
 
 export default InteriorsPage
+
 
 
 
