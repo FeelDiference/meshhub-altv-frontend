@@ -75,10 +75,17 @@ export function MonacoXMLEditor({
     
     // Ищем строку с параметром
     const lines = value.split('\n')
-    const lineNumber = lines.findIndex(line => 
-      line.includes(`<${highlightedParam} `) || 
-      line.includes(`<${highlightedParam}>`)
-    ) + 1 // Monaco использует 1-based индексы
+    const lineNumber = lines.findIndex(line => {
+      // Проверяем на тег (например, <lodDist value="100">)
+      if (line.includes(`<${highlightedParam} `) || line.includes(`<${highlightedParam}>`)) {
+        return true
+      }
+      // Проверяем на значение внутри тега (например, <archetypeName>qt_cyber_...</archetypeName>)
+      if (line.includes(`>${highlightedParam}<`)) {
+        return true
+      }
+      return false
+    }) + 1 // Monaco использует 1-based индексы
     
     if (lineNumber > 0) {
       console.log(`[MonacoEditor] Highlighting parameter ${highlightedParam} at line ${lineNumber}`)

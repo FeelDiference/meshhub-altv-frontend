@@ -10,7 +10,7 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { Button } from '@/components/common/Button'
 import { logAppPathInfo } from '@/utils/pathDetection'
 import { setupAltVAuthHandlers } from '@/services/auth'
-import { InteriorsPage } from '@/components/interiors/InteriorsPage'
+import { InteriorsPage } from '@/pages/interiors/InteriorsPage'
 import WorldPage from '@/components/world/WorldPage'
 import CharacterPage from '@/components/character/CharacterPage'
 import { Dashboard, LoginPage, VehiclesPage, WeaponsPage } from '@/pages'
@@ -33,8 +33,46 @@ function App() {
   const [yftGameViewActive, setYftGameViewActive] = useState(false) // Game View mode from YFT Viewer
   const [focusMode, setFocusMode] = useState<string>('off') // Состояние для focusMode
   
+  // Состояние для текущего интерьера (определяется при открытии панели)
+  const [currentInteriorData, setCurrentInteriorData] = useState<{
+    interiorId: number
+    position: { x: number; y: number; z: number }
+  } | null>(null)
+  
   // Получаем методы из useFavorites для executor
   const { favoriteLocations, favoriteTeleportMarkers } = useFavorites()
+  
+  // ============================================================================
+  // Определение текущего интерьера при открытии панели
+  // ============================================================================
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'alt' in window && (window as any).alt) {
+      const alt = (window as any).alt
+      
+      // Обработчик ответа о текущем интерьере
+      const handleInteriorResponse = (data: { interiorId: number; position: { x: number; y: number; z: number } }) => {
+        setCurrentInteriorData(data)
+      }
+      
+      // Обработчик открытия панели
+      const handlePanelOpened = () => {
+        alt.emit('interior:current:request')
+      }
+      
+      // Регистрируем обработчики
+      alt.on('interior:current:response', handleInteriorResponse)
+      alt.on('altv:panel:opened', handlePanelOpened)
+      
+      // Запрашиваем текущий интерьер сразу при монтировании (если панель уже открыта)
+      alt.emit('interior:current:request')
+      
+      return () => {
+        alt.off?.('interior:current:response', handleInteriorResponse)
+        alt.off?.('altv:panel:opened', handlePanelOpened)
+      }
+    }
+  }, [])
   
   /**
    * Универсальный executor для HotKeys
@@ -369,12 +407,18 @@ function App() {
 
   // Получить текущий компонент
   const getCurrentComponent = () => {
-    if (currentPage === 'dashboard') return Dashboard
+    console.log('[App] getCurrentComponent called, currentPage:', currentPage)
+    if (currentPage === 'dashboard') {
+      console.log('[App] Returning Dashboard')
+      return Dashboard
+    }
     const item = menuItems.find(item => item.id === currentPage)
+    console.log('[App] Found menu item:', item?.id, 'component:', item?.component?.name)
     return item?.component || Dashboard
   }
 
   const CurrentComponent = getCurrentComponent()
+  console.log('[App] CurrentComponent:', CurrentComponent?.name)
 
   // Показываем загрузку при инициализации
   if (isLoading) {
@@ -496,7 +540,13 @@ function App() {
             return (
               <button
                 key={item.id}
-                onClick={() => item.enabled && setCurrentPage(item.id)}
+                onClick={() => {
+                  console.log('[App] Menu item clicked:', item.id, 'enabled:', item.enabled)
+                  if (item.enabled) {
+                    console.log('[App] Setting currentPage to:', item.id)
+                    setCurrentPage(item.id)
+                  }
+                }}
                 disabled={!item.enabled}
                 className={`w-full flex items-center space-x-2 sm:space-x-3 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg transition-colors ${
                   currentPage === item.id 
@@ -526,7 +576,11 @@ function App() {
           pointerEvents: focusMode === 'game-view' ? 'none' : 'auto'
         }}
       >
-        <CurrentComponent />
+        {currentPage === 'interiors' ? (
+          <InteriorsPage currentInteriorData={currentInteriorData} />
+        ) : (
+          <CurrentComponent />
+        )}
       </div>
 
       {/* Footer - скрываем в Game View режиме */}

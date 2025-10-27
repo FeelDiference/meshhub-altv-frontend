@@ -73,3 +73,93 @@ export interface InteriorDetailsResponse {
   count: number
 }
 
+export type InteriorEditorMode = 'ytyp' | 'ymap'
+
+export interface YtypEntity {
+  archetypeName: string
+  position: Vec3
+  rotation?: Vec4
+  lodDist?: number
+  flags?: number
+  guid?: number
+  index?: number // Индекс entity для связи с комнатами
+  // Дополнительные поля из YTYP
+  scaleXY?: number
+  scaleZ?: number
+  parentIndex?: number
+  childLodDist?: number
+  numChildren?: number
+  priorityLevel?: string
+  lodLevel?: string
+  extensions?: any
+  ambientOcclusionMultiplier?: number
+  artificialAmbientOcclusion?: number
+  tintValue?: number
+}
+
+export interface YtypRoom {
+  name: string
+  attachedObjects: number[] // Индексы entities
+  bbMin?: Vec3
+  bbMax?: Vec3
+}
+
+export interface YtypPortal {
+  roomFrom: number
+  roomTo: number
+  attachedObjects: number[]
+  flags?: number
+  corners?: Array<{ x: number; y: number; z: number }> // Массив углов портала (4 угла для прямоугольника)
+}
+
+export interface InteriorEntitySet {
+  name: string
+  isActive: boolean
+  entities: YtypEntity[]
+}
+
+
+
+export interface YtypEntity {
+  archetypeName: string
+  position: Vec3
+  rotation?: Vec4
+  lodDist?: number
+  flags?: number
+  guid?: number
+  index?: number // Индекс entity для связи с комнатами
+  // Дополнительные поля из YTYP
+  scaleXY?: number
+  scaleZ?: number
+  parentIndex?: number
+  childLodDist?: number
+  numChildren?: number
+  priorityLevel?: string
+  lodLevel?: string
+  extensions?: any
+  ambientOcclusionMultiplier?: number
+  artificialAmbientOcclusion?: number
+  tintValue?: number
+}
+
+export interface YtypRoom {
+  name: string
+  attachedObjects: number[] // Индексы entities
+  bbMin?: Vec3
+  bbMax?: Vec3
+}
+
+export interface YtypPortal {
+  roomFrom: number
+  roomTo: number
+  attachedObjects: number[]
+  flags?: number
+  corners?: Array<{ x: number; y: number; z: number }> // Массив углов портала (4 угла для прямоугольника)
+}
+
+export interface InteriorEntitySet {
+  name: string
+  isActive: boolean
+  entities: YtypEntity[]
+}
+
