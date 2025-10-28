@@ -4,24 +4,163 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/assets/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MeshHub ALT:V Integration</title>
+    <title>MeshHub FiveM Integration</title>
     <style>
-      /* Прозрачный фон для WebView */
+      /* Прозрачный фон для NUI - FiveM специфичные стили */
+      html {
+        background: transparent !important;
+        background-color: rgba(0, 0, 0, 0) !important;
+        overflow: hidden;
+      }
+      
       body {
         background: transparent !important;
+        background-color: rgba(0, 0, 0, 0) !important;
         margin: 0;
         padding: 0;
         overflow: hidden;
       }
+      
       #root {
         /* Адаптивная ширина: 15.6vw соответствует 400px на 2560px экране */
         width: 15.6vw;
         min-width: 320px;
         max-width: 450px;
         height: 100vh;
-        background: transparent;
+        background: transparent !important;
+        background-color: rgba(0, 0, 0, 0) !important;
+      }
+      
+      /* Скрываем NUI по умолчанию */
+      body.hidden {
+        display: none !important;
       }
     </style>
+    
+    <!-- FiveM NUI Adapter: эмулирует Alt:V WebView API -->
+    <script>
+      /**
+       * FiveM NUI Adapter для совместимости с Alt:V WebView API
+       */
+      
+      // Получить имя текущего ресурса
+      function GetParentResourceName() {
+        return window.location.hostname === "" ? "meshhub-fivem" : window.location.hostname;
+      }
+      
+      // Создаем объект alt для совместимости с Alt:V кодом
+      window.alt = {
+        emit: function(eventName, ...args) {
+          console.log('[NUI Adapter] Emitting to client:', eventName, args);
+          
+          fetch(`https://${GetParentResourceName()}/${eventName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(args.length === 1 ? args[0] : args)
+          }).catch(err => {
+            console.warn('[NUI Adapter] Failed to emit:', eventName, err);
+          });
+        },
+        
+        on: function(eventName, callback) {
+          console.log('[NUI Adapter] Registering handler for:', eventName);
+          
+          if (!window._altHandlers) {
+            window._altHandlers = new Map();
+          }
+          
+          if (!window._altHandlers.has(eventName)) {
+            window._altHandlers.set(eventName, []);
+          }
+          
+          window._altHandlers.get(eventName).push(callback);
+        },
+        
+        _triggerEvent: function(eventName, data) {
+          if (window._altHandlers && window._altHandlers.has(eventName)) {
+            const handlers = window._altHandlers.get(eventName);
+            handlers.forEach(handler => {
+              try {
+                handler(data);
+              } catch (e) {
+                console.error('[NUI Adapter] Error in handler:', eventName, e);
+              }
+            });
+          }
+        }
+      };
+      
+      // Слушаем сообщения от FiveM клиента
+      window.addEventListener('message', function(event) {
+        const data = event.data;
+        
+        if (data && data.type) {
+          console.log('[NUI Adapter] Received from client:', data.type, data.data);
+          
+          // Специальная обработка visibility для скрытия/показа UI
+          if (data.type === 'nui:visibility') {
+            if (data.data && data.data.visible) {
+              document.body.classList.remove('hidden');
+              
+              // Принудительно устанавливаем прозрачный фон при показе
+              document.documentElement.style.backgroundColor = 'transparent';
+              document.body.style.backgroundColor = 'transparent';
+              const root = document.getElementById('root');
+              if (root) {
+                root.style.backgroundColor = 'transparent';
+              }
+              
+              console.log('[NUI Adapter] NUI shown');
+            } else {
+              document.body.classList.add('hidden');
+              console.log('[NUI Adapter] NUI hidden');
+            }
+          }
+          
+          // Триггерим зарегистрированные обработчики
+          if (window._altHandlers && window._altHandlers.has(data.type)) {
+            const handlers = window._altHandlers.get(data.type);
+            handlers.forEach(handler => {
+              try {
+                handler(data.data);
+              } catch (e) {
+                console.error('[NUI Adapter] Error in handler:', data.type, e);
+              }
+            });
+          }
+        }
+      });
+      
+      // Закрытие UI по ESC
+      document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+          console.log('[NUI Adapter] ESC pressed, closing UI');
+          fetch(`https://${GetParentResourceName()}/nui:close`, {
+            method: 'POST',
+            body: JSON.stringify({})
+          }).catch(() => {});
+        }
+      });
+      
+      console.log('[NUI Adapter] ✅ FiveM NUI adapter initialized');
+      
+      // Скрываем UI при загрузке
+      document.addEventListener('DOMContentLoaded', function() {
+        document.body.classList.add('hidden');
+        
+        // Принудительно устанавливаем прозрачный фон через JS
+        document.documentElement.style.backgroundColor = 'transparent';
+        document.body.style.backgroundColor = 'transparent';
+        
+        const root = document.getElementById('root');
+        if (root) {
+          root.style.backgroundColor = 'transparent';
+        }
+        
+        console.log('[NUI Adapter] UI hidden by default');
+        console.log('[NUI Adapter] Transparent background forced');
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
