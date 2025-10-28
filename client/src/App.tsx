@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Car, Settings, MapPin, Zap, LogOut, User, Globe, Users } from 'lucide-react'
+import { Car, Settings, MapPin, Zap, LogOut, User, Globe, Users, Map } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/hooks/useAuth'
@@ -11,6 +11,7 @@ import { Button } from '@/components/common/Button'
 import { logAppPathInfo } from '@/utils/pathDetection'
 import { setupAltVAuthHandlers } from '@/services/auth'
 import { InteriorsPage } from '@/pages/interiors/InteriorsPage'
+import { ExteriorsPage } from '@/pages/exteriors/ExteriorsPage'
 import WorldPage from '@/components/world/WorldPage'
 import CharacterPage from '@/components/character/CharacterPage'
 import { Dashboard, LoginPage, VehiclesPage, WeaponsPage } from '@/pages'
@@ -409,12 +410,20 @@ function App() {
       order: 2
     },
     {
+      id: 'exteriors',
+      label: 'Экстерьеры',
+      icon: Map,
+      component: ExteriorsPage,
+      enabled: true,
+      order: 3
+    },
+    {
       id: 'weapons',
       label: 'Оружие',
       icon: Zap,
       component: WeaponsPage,
       enabled: true, // WEAPONS ENABLED
-      order: 3
+      order: 4
     },
     {
       id: 'world',
@@ -422,7 +431,7 @@ function App() {
       icon: Globe,
       component: WorldPage,
       enabled: true,
-      order: 4
+      order: 5
     },
     {
       id: 'character',
@@ -430,7 +439,7 @@ function App() {
       icon: Users,
       component: CharacterPage,
       enabled: true,
-      order: 5
+      order: 6
     }
   ].sort((a, b) => a.order - b.order)
 

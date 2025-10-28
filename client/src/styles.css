@@ -29,10 +29,11 @@ html, body {
   flex-direction: column;
 }
 
-/* Прозрачные фоны для WebView */
+/* Прозрачные фоны для WebView/NUI */
 .webview-panel {
-  background: rgba(20, 20, 20, 0.95);
-  backdrop-filter: blur(10px);
+  background: transparent !important;
+  /* FiveM: полностью прозрачный фон, панели сами управляют своими фонами */
+  backdrop-filter: none;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
 }
 

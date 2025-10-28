@@ -139,11 +139,9 @@ export function useAuth() {
       console.log('🔐 User set:', response.user)
       console.log('🔐 State updated: isAuthenticated =', true)
       
-      // Принудительный перезагрузка страницы после успешного логина
-      setTimeout(() => {
-        console.log('🔄 Перезагрузка страницы для обновления интерфейса')
-        window.location.reload()
-      }, 500)
+      // FiveM: НЕ перезагружаем страницу (это сбрасывает localStorage в NUI)
+      // React автоматически обновит UI через setState
+      console.log('✅ Auth state updated, React will re-render automatically')
       
     } catch (error: any) {
       console.error('❌ Ошибка логина:', error.message)

@@ -4,5 +4,6 @@ export { LoginPage } from './LoginPage'
 export { VehiclesPage } from './vehicles/VehiclesPage'
 export { WeaponsPage } from './weapons/WeaponsPage'
 export { InteriorsPage } from './interiors/InteriorsPage'
+export { ExteriorsPage } from './exteriors/ExteriorsPage'
 
 
